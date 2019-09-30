@@ -1,0 +1,4853 @@
+---
+title: "MI - Gating schema"
+output: html_notebook
+editor_options: 
+  chunk_output_type: inline
+---
+
+Herein we can find the gating schema for each cell type from the Milieu Intérieur cohort. For the purposes of plotting this is restricted to 5 individuals from the MI cohort 
+(arbitrarily selected).
+
+## Panel 1
+
+```{r}
+## MI flow cytometry processing
+##############################################
+### Panel 1 - Naive & Memory T cell subsets ##
+##############################################
+library(flowCore)
+library(flowWorkspace)
+library(flowStats)
+library(openCyto)
+library(flowViz)
+library(ggcyto)
+library(ggplot2)
+source("~/Dropbox/R_sessions/GGMike/theme_mike.R")
+
+print("Panel 1A")
+path.to.files <- "~/Dropbox/Noise_FACS/Replication_cohorts/Milieu_Interieur/fcs_files/"
+
+P1.flow.data <- read.flowSet(path=path.to.files,
+                             transformation=FALSE, pattern="P01")
+sample.ids <- unlist(lapply(strsplit(x=sampleNames(P1.flow.data), split="-", fixed=TRUE),
+                            FUN=function(X) paste(X[1], X[2], sep="_")))
+sampleNames(P1.flow.data) <- sample.ids
+
+#subset into group A
+P1.flow.data <- P1.flow.data[1:5]
+
+# remove samples with < 1000 events recorded
+extract <- numeric(0)
+for(x in seq_len(length(P1.flow.data))){
+  events <- nrow(P1.flow.data[[x]])
+  if(events < 10000){
+    extract <- c(extract, x)
+  }
+}
+
+P1.fs_filt <- P1.flow.data[seq(along=P1.flow.data)]
+if(length(extract)){P1.fs_filt <- P1.fs_filt[-(extract),]}
+
+## subset P1.fs_filt for testing
+#P1.fs_filt <- P1.fs_filt[1:20]
+
+# remove channels that aren't interesting
+param.desc <-  pData(parameters(P1.flow.data[[1]]))[, "desc"]
+names(param.desc) <- colnames(P1.flow.data[[1]])
+param.desc[is.na(param.desc)] <- names(param.desc)[is.na(param.desc)]
+param.meta <- do.call(cbind.data.frame,
+                      list("Param"=names(param.desc),
+                           "Marker"=param.desc))
+
+# transform the data
+arcTrans <- arcsinhTransform()
+logTrans <- logTransform()
+biexpTrans <- biexponentialTransform()
+scaleTrans <- scaleTransform()
+logicleTrans <- logicleTransform()
+linearTrans <- linearTransform()
+
+# transform each paramter
+transform1 <- transformList("V1-A", biexpTrans)
+transform2 <- transformList("V2-A", biexpTrans)
+transform3 <- transformList("B1-A", biexpTrans)
+transform4 <- transformList("B2-A", biexpTrans)
+transform5 <- transformList("B3-A", biexpTrans)
+transform6 <- transformList("B4-A", biexpTrans)
+transform7 <- transformList("R1-A", biexpTrans)
+transform8 <- transformList("R2-A", biexpTrans)
+transformForwardH <- transformList("FSC-H", biexpTrans)
+transformSideA <- transformList("SSC-A", biexpTrans)
+transformForwardA <- transformList("FSC-A", biexpTrans)
+
+P1.fs_filt <- transform(P1.fs_filt, transform1)
+P1.fs_filt <- transform(P1.fs_filt, transform2)
+P1.fs_filt <- transform(P1.fs_filt, transform3)
+P1.fs_filt <- transform(P1.fs_filt, transform4)
+P1.fs_filt <- transform(P1.fs_filt, transform5)
+P1.fs_filt <- transform(P1.fs_filt, transform6)
+P1.fs_filt <- transform(P1.fs_filt, transform7)
+P1.fs_filt <- transform(P1.fs_filt, transform8)
+
+# P1.fs_filt <- transform(P1.fs_filt, transformForwardH)
+# P1.fs_filt <- transform(P1.fs_filt, transformSideA)
+# P1.fs_filt <- transform(P1.fs_filt, transformForwardA)
+
+# # gate on CD3+ cells
+# ggcyto(P1.fs_filt[1:6], aes(x=`CD3-A`, y=`SSC-H`)) +
+#   geom_hex(bins=128) +
+#   lims(x=c(0, 12), y=c(0, 2.7e5))
+
+################################################
+## There are clearly issues with gates being 
+## affected by indvidual-level variation, such as 
+## age and confounding batch effects
+## Parameters will need to be warped prior to each gate definition
+######################################
+
+### Warp CD3 before gating
+pars <- c("V1-A")
+P1.warping <- warpSet(P1.fs_filt, stains=pars, bwFac=2, peakNr=2)
+
+# densityplot(x=~`V1-A`,
+#             data=P1.warping,
+#             channel=c("V1-A"))
+```
+
+
+```{r}
+# set up a CD3 gate
+# setup side scatter and CD3 gates
+side.points <- c(0, 0, 1.0e5, 1.0e5, 0)
+cd3.points <- c(7.9, 12, 12, 7.9, 7.9)
+
+cd3.gate <- polygonGate(filterId="CD3", .gate=cbind("SSC-A"=side.points, "V1-A"=cd3.points))
+cd3.filter <- filter(P1.warping, cd3.gate)
+cd3.gates <- lapply(cd3.filter, 
+                    function(res) filterDetails(res, "CD3")$filter)
+
+# subset all CD3+ cells before all other analyses
+P1.cd3 <- Subset(P1.warping, cd3.gate)
+```
+
+
+```{r, fig.width=2.75, fig.height=2.75}
+cd3.p <- ggcyto(P1.warping[1], aes(x=`CD3-A`, y=`SSC-A`)) +
+  geom_hex(bins=128) +
+  lims(x=c(0, 12), y=c(0, 2.7e5)) +
+  theme_mike() +
+  labs(x="CD3", y="SSC-A") +
+  theme(strip.text=element_blank()) +
+  geom_gate(cd3.gates)
+
+ggsave(cd3.p,
+       filename="~/Dropbox/Noise_FACS/Replication_cohorts/Milieu_Interieur/plot.dir/P1_cd3_gate.png",
+       height=2.75, width=2.75, dpi=300)
+
+cd3.p
+```
+
+
+```{r}
+# gate on singlets
+# ggcyto(P1.fs_filt[1:6], aes(x=`FSC-H`, y=`FSC-W`)) +
+#   geom_hex(bins=128) +
+#   lims(x=c(0, 3e5), y=c(0, 3e5))
+
+# set up a singlets gate
+# setup forward and side scatter gates
+width.points <- c(1.5e5, 1.5e5, 2.2e5, 2.2e5, 1.5e5)
+height.points <- c(1e4, 2e5, 2e5, 1e4, 1e4)
+singlet.gate <- polygonGate(filterId="Singlet", .gate=cbind("FSC-H"=height.points, "FSC-W"=width.points))
+singlet.filter <- filter(P1.cd3, singlet.gate)
+singlet.gates <- lapply(singlet.filter, 
+                        function(res) filterDetails(res, "Singlet")$filter)
+```
+
+
+```{r, fig.height=2.75, fig.width=2.75}
+# # gate on singlets
+singlet.p <- ggcyto(P1.cd3[1], aes(x=`FSC-H`, y=`FSC-W`)) +
+  geom_hex(bins=128) +
+  lims(x=c(0, 3e5), y=c(0, 3e5)) +
+  theme_mike() +
+  labs(x="FSC-H", y="FSC-W") +
+  theme(strip.text=element_blank()) +
+  geom_gate(singlet.gates)
+
+ggsave(singlet.p,
+       filename="~/Dropbox/Noise_FACS/Replication_cohorts/Milieu_Interieur/plot.dir/P1_singlet_gate.png",
+       height=2.75, width=2.75, dpi=300)
+
+singlet.p
+```
+
+
+```{r}
+# subset all singlet cells before all other analyses
+P1.singlet <- Subset(P1.cd3, singlet.gate)
+
+# # gate on side scatter
+# ggcyto(P1.singlet[1:6], aes(x=`SSC-H`, y=`SSC-A`)) +
+#   geom_hex(bins=128) +
+#   lims(x=c(0, 2.5e5), y=c(0, 2.5e5))
+
+# set up a side scatter gate requries a covariance matrix
+# setup covariance gate
+ssc.cov <- matrix(c(2e9, 1e6, 1.5e9, 1e10), ncol=2,
+                  dimnames=list(c("SSC-H", "SSC-A"), c("SSC-H", "SSC-A")))
+ssc.mean <- c("SSC-H"=2e4, "SSC-A"=2.5e4)
+ssc.ellipsoid <- ellipsoidGate(filterId="SSC.Ellipse", .gate=ssc.cov, mean=ssc.mean)
+ssc.filter <- filter(P1.singlet, ssc.ellipsoid)
+ssc.gates <- lapply(ssc.filter, 
+                    function(res) filterDetails(res, "SSC.Ellipse")$filter)
+```
+
+
+```{r, fig.height=2.75, fig.width=2.75}
+# # gate on side scatter
+cov.p <- ggcyto(P1.singlet[1], aes(x=`SSC-H`, y=`SSC-A`)) +
+  geom_hex(bins=128) +
+  lims(x=c(0, 2.5e5), y=c(0, 2.5e5)) +
+  theme_mike() +
+  labs(x="SSC-H", y="SSC-A") +
+  theme(strip.text=element_blank()) +
+  geom_gate(ssc.ellipsoid)
+
+ggsave(cov.p,
+       filename="~/Dropbox/Noise_FACS/Replication_cohorts/Milieu_Interieur/plot.dir/P1_covar_gate.png",
+       height=2.75, width=2.75, dpi=300)
+
+cov.p
+```
+
+
+```{r}
+# subset all singlet cells before all other analyses
+P1.ssc <- Subset(P1.singlet, ssc.gates)
+extract <- numeric(0)
+for(x in seq_len(length(P1.ssc))){
+  events <- nrow(P1.ssc[[x]])
+  if(events < 1000){
+    extract <- c(extract, x)
+  }
+}
+
+if(length(extract)){P1.ssc <- P1.ssc[-(extract),]}
+#################################################
+## need to align main parameters before gating ##
+#################################################
+### some parameters aren't being registered properly
+# might need to only select cells with values > 0
+
+# might need to split the parameters to get those with 2 peaks
+# properly aligned compare to those with shoulder peaks.
+# I need to warp some parameters separately to others
+pars <- colnames(P1.ssc)[c(8, 11, 14, 17, 20, 23, 26, 29)]
+second.warp <- c("V2-A", "B2-A")
+third.warp <- c("R1-A")
+P1.warping <- warpSet(P1.ssc, stains=setdiff(pars, c(second.warp, third.warp)))
+P1.warping <- warpSet(P1.warping, stains=second.warp, bwFac=0.75)
+P1.warping <- warpSet(P1.warping, stains=third.warp, bwFac = 1.5, nbreaks=20)
+# 
+# densityplot(x=~`R1-A`,
+#             data=P1.warping,
+#             channel=c("R1-A"))
+```
+
+
+```{r}
+# set up gating scheme using a GatingSet object
+P1.gs <- GatingSet(P1.warping)
+```
+
+
+```{r}
+# rm(list=c("P1.warping", "P1.flow.data", "P1.fs_filt",
+#           "P1.singlet", "P1.ssc", "P1.cd3"))
+# gc()
+```
+
+
+```{r}
+# # plot CD4 Vs CD8 to get major T cell subsets
+# ggcyto(P1.gs[1:6], aes(x=`R2-A`, y=`B4-A`), subset="root") +
+#   geom_hex(bins=256) +
+#   lims(x=c(0, 12), y=c(0, 12))
+
+# might need 4 different gates to get the two SP populations, then the DP and DN cells
+cd8.points <- c(8, 11, 11, 8, 8)
+cd4.points <- c(0, 0, 7, 7, 0)
+cd8.gate <- polygonGate(filterId="CD8", .gate=cbind("B4-A"=cd8.points, "R2-A"=cd4.points))
+
+# might need 4 different gates to get the two SP populations, then the DP and DN cells
+cd8.points <- c(8, 8, 0, 0, 8)
+cd4.points <- c(7.5, 11, 11, 7.5, 7.5)
+cd4.gate <- polygonGate(filterId="CD4", .gate=cbind("B4-A"=cd8.points, "R2-A"=cd4.points))
+
+# might need 4 different gates to get the two SP populations, then the DP and DN cells
+cd8.points <- c(0, 7.5, 7.5, 0, 0)
+cd4.points <- c(0, 0, 7, 7, 0)
+DN.gate <- polygonGate(filterId="DN", .gate=cbind("B4-A"=cd8.points, "R2-A"=cd4.points))
+
+# might need 4 different gates to get the two SP populations, then the DP and DN cells
+cd8.points <- c(8, 11, 11, 8, 8)
+cd4.points <- c(7, 7, 11, 11, 7)
+DP.gate <- polygonGate(filterId="DP", .gate=cbind("B4-A"=cd8.points, "R2-A"=cd4.points))
+```
+
+
+```{r, fig.height=2.75, fig.width=2.75}
+# # # plot CD4 Vs CD8 to get major T cell subsets
+tcell.p <- ggcyto(P1.gs[1], aes(x=`R2-A`, y=`B4-A`), subset="root") +
+  geom_hex(bins=256) +
+  labs(x="CD4", y="CD8") +
+  theme_mike() +
+  theme(strip.text=element_blank()) +
+  lims(x=c(0, 12), y=c(0, 12)) +
+  geom_gate(cd8.gate) +
+  geom_gate(cd4.gate) +
+  geom_gate(DN.gate) +
+  geom_gate(DP.gate)
+
+ggsave(tcell.p,
+       filename="~/Dropbox/Noise_FACS/Replication_cohorts/Milieu_Interieur/plot.dir/P1_tcell_gate.png",
+       height=2.75, width=2.75, dpi=300)
+
+tcell.p
+```
+
+
+```{r}
+# add the T cell gates
+flowWorkspace::add(P1.gs, cd4.gate, parent="root")
+recompute(P1.gs)
+
+flowWorkspace::add(P1.gs, cd8.gate, parent="root")
+recompute(P1.gs)
+
+flowWorkspace::add(P1.gs, DN.gate, parent="root")
+recompute(P1.gs)
+
+flowWorkspace::add(P1.gs, DP.gate, parent="root")
+recompute(P1.gs)
+```
+
+
+```{r}
+# extract each gate and re-warp them
+# might need to split the parameters to get those with 2 peaks
+# properly aligned compare to those with shoulder peaks.
+# I need to warp some parameters separately to others
+
+######################################################################################
+# need to loop over each terminal node, extract into a new flowSet and then warp them
+# its not possible to add new gates to the GatingSet with the re-warped values
+# so I'll extract the single-cell expression values on the fly as I define each gate
+# I need to be careful because `samp.list` keep hold of these through the entire script
+#####################################################################################
+
+all.nodes <- getNodes(P1.gs)[2:length(getNodes(P1.gs))]
+flowset.list <- list()
+
+## this contains all of the processed single-cell measurements
+samp.list <- list()
+
+for(i in seq_along(all.nodes)){
+  node <- all.nodes[i]
+  flow.i <- getData(P1.gs, y=node)
+  
+  # remove samples with < 1000 events recorded
+  extract <- numeric(0)
+  for(x in seq_len(length(flow.i))){
+    events <- nrow(flow.i[[x]])
+    if(events < 100){
+      extract <- c(extract, x)
+    }
+  }
+  
+  flow.i_filt <- flow.i[seq(along=flow.i)]
+  if(length(extract)){flow.i_filt <- flow.i_filt[-(extract),]}
+  
+  pars <- colnames(flow.i_filt)[c(8, 11, 14, 17, 20, 23, 26, 29)]
+  
+  if(node == "/DN"){
+    # use a try-catch statement to try to catch and fix these persistent errors
+    P1.warping <- tryCatch({
+      second.warp <- c()
+      print(paste("Warping parameters: ", setdiff(pars, second.warp), sep=" "))
+      warpSet(flow.i_filt, stains=setdiff(pars, second.warp))
+    }, warning=function(war){
+      print(paste("MY_WARNING: ", war))
+      second.warp <- c()
+      return(warpSet(flow.i_filt, stains=setdiff(pars, second.warp)))
+    }, error=function(err){
+      print(paste("MY_ERROR :", err))
+      # what should I do in the case of an error? try again?
+      second.warp <- c("V2-A")
+      P1.warping <- warpSet(flow.i_filt, stains=setdiff(pars, second.warp), peakNr=1)
+      return(P1.warping)
+    }, finally={
+      print(paste("Warping parameters: ", second.warp, sep=" "))
+    })
+  } else{
+    P1.warping <- warpSet(flow.i_filt, stains=pars)
+  }
+  
+  
+  flowset.list[[node]] <- P1.warping
+  
+  print(node)
+  
+  samp.names <- sampleNames(P1.warping)
+  node.list <- list()
+  for(x in seq_along(samp.names)){
+    samp <- samp.names[x]
+    samp.flow <- P1.warping[[samp]]
+    samp.mat <- exprs(samp.flow)
+    if(nrow(samp.mat) > 1){
+      samp.mat <- samp.mat[, c("FSC-A", "SSC-A", "FSC-H", pars)]
+      cell.prefix <- paste(samp, gsub(node, pattern="/", replacement="_"), sep=".")
+      cell.names <- paste(cell.prefix, paste0("Cell", 1:nrow(samp.mat)), sep=".")
+      rownames(samp.mat) <- cell.names
+      node.list[[samp]] <- samp.mat
+    } else if(nrow(samp.mat) < 1 & nrow(samp.mat) > 0){
+      samp.mat <- as.matrix(samp.mat[, c("FSC-A", "SSC-A", "FSC-H", pars)], ncol=length(pars))
+      cell.prefix <- paste(samp, gsub(node, pattern="/", replacement="_"), sep=".")
+      cell.names <- paste(cell.prefix, paste0("Cell", 1:nrow(samp.mat)), sep=".")
+      rownames(samp.mat) <- cell.names
+      node.list[[samp]] <- samp.mat
+    }
+  }
+  samp.list[[node]] <- do.call(rbind.data.frame,
+                               node.list)
+}
+
+# T cell groups defined by this panel:
+# T naive
+# T central memory
+# T effector memory
+# T effector memory RA
+
+# remove samples with < 1000 events recorded
+CD4.flow <- flowset.list[["/CD4"]]
+extract <- numeric(0)
+for(x in seq_len(length(CD4.flow))){
+  events <- nrow(CD4.flow[[x]])
+  if(events < 1000){
+    extract <- c(extract, x)
+  }
+}
+
+P1.CD4_filt <- CD4.flow[seq(along=CD4.flow)]
+if(length(extract)){P1.CD4_filt <- P1.CD4_filt[-(extract),]}
+
+# remove samples with < 1000 events recorded
+CD8.flow <- flowset.list[["/CD8"]]
+extract <- numeric(0)
+for(x in seq_len(length(CD8.flow))){
+  events <- nrow(CD8.flow[[x]])
+  if(events < 1000){
+    extract <- c(extract, x)
+  }
+}
+
+P1.CD8_filt <- CD8.flow[seq(along=CD8.flow)]
+if(length(extract)){P1.CD8_filt <- P1.CD8_filt[-(extract),]}
+```
+
+
+```{r}
+# define a GatingSet object for CD4 and CD8 T cells
+P1.CD4.gs <- GatingSet(P1.CD4_filt)
+P1.CD8.gs <- GatingSet(P1.CD8_filt)
+```
+
+
+```{r}
+# rm(list=c("P1.CD4_filt", "P1.CD8_filt", "CD4.flow", "CD8.flow", "P1.warping", "flowset.list"))
+# gc()
+
+######################
+# Naive CD27+CD45RA+ #
+######################
+# naive T cells co-express CD45RA and CD27 (also CCR7+)
+cd45ra.points <- c(7.5, 7.5, 12, 12, 7.5)
+cd27.points <- c(8, 11, 11, 8, 8)
+tnaive.gate <- polygonGate(filterId="Tnaive", .gate=cbind("B3-A"=cd27.points, "B1-A"=cd45ra.points))
+
+flowWorkspace::add(P1.CD4.gs, tnaive.gate, parent="root")
+recompute(P1.CD4.gs)
+
+flowWorkspace::add(P1.CD8.gs, tnaive.gate, parent="root")
+recompute(P1.CD8.gs)
+
+###############################
+# Central memory CD27+CD45RA- #
+###############################
+# central memmory T cells express CD27 but lack CD45RA and CCR7
+cd45ra.points <- c(2.5, 2.5, 7.5, 7.5, 2.5)
+cd27.points <- c(7, 11, 11, 7, 7)
+tcm.gate <- polygonGate(filterId="TCM", .gate=cbind("B3-A"=cd27.points, "B1-A"=cd45ra.points))
+
+flowWorkspace::add(P1.CD4.gs, tcm.gate, parent="root")
+recompute(P1.CD4.gs)
+
+flowWorkspace::add(P1.CD8.gs, tcm.gate, parent="root")
+recompute(P1.CD8.gs)
+
+################################
+# Effector memory CD27-CD45RA- #
+################################
+# Effector memmory T cells lack CD27, CD45RA and CCR7
+cd45ra.points <- c(2.5, 2.5, 7.5, 7.5, 2.5)
+cd27.points <- c(2.5, 7, 7, 2.5, 2.5)
+tem.gate <- polygonGate(filterId="TEM", .gate=cbind("B3-A"=cd27.points, "B1-A"=cd45ra.points))
+
+flowWorkspace::add(P1.CD4.gs, tem.gate, parent="root")
+recompute(P1.CD4.gs)
+
+flowWorkspace::add(P1.CD8.gs, tem.gate, parent="root")
+recompute(P1.CD8.gs)
+
+#######################
+# T EMRA CD27-CD45RA+ #
+#######################
+# Effector memmory T cells express CD45RA but lack CD27 and CCR7
+cd45ra.points <- c(7.5, 7.5, 11, 11, 7.5)
+cd27.points <- c(2.5, 7, 7, 2.5, 2.5)
+temra.gate <- polygonGate(filterId="TEMRA", .gate=cbind("B3-A"=cd27.points, "B1-A"=cd45ra.points))
+
+flowWorkspace::add(P1.CD4.gs, temra.gate, parent="root")
+recompute(P1.CD4.gs)
+
+flowWorkspace::add(P1.CD8.gs, temra.gate, parent="root")
+recompute(P1.CD8.gs)
+```
+
+
+```{r, fig.height=2.75, fig.width=2.75}
+# # plot CD27 Vs CD45RA to get major T cell subsets
+p.memory <- ggcyto(P1.CD4.gs[1], aes(x=`B3-A`, y=`B1-A`), subset="root") +
+  geom_hex(bins=128) +
+  labs(x="CD27", y="CD45RA") +
+  lims(x=c(0, 12), y=c(0, 12)) +
+  theme_mike() +
+  theme(strip.text=element_blank()) +
+  geom_gate(tnaive.gate) +
+  geom_gate(tcm.gate) +
+  geom_gate(tem.gate) +
+  geom_gate(temra.gate)
+
+ggsave(p.memory,
+       filename="~/Dropbox/Noise_FACS/Replication_cohorts/Milieu_Interieur/plot.dir/P1_memory_gate.png",
+       height=2.75, width=2.75, dpi=300)
+
+p.memory
+```
+
+```{r}
+# flush all the files out before the next panel
+sink(file="/dev/null")
+rm(list=ls())
+gc()
+sink(file=NULL)
+```
+
+## Panel 2
+
+```{r}
+source("~/Dropbox/R_sessions/GGMike/theme_mike.R")
+
+## MI flow cytometry processing
+##########################################
+### Panel 2 - Regulatory T cell subsets ##
+##########################################
+
+print("Panel 2A")
+path.to.files <- "~/Dropbox/Noise_FACS/Replication_cohorts/Milieu_Interieur/fcs_files/"
+P2.flow.data <- read.flowSet(path=path.to.files,
+                             transformation=FALSE, pattern="P02")
+sample.ids <- unlist(lapply(strsplit(x=sampleNames(P2.flow.data), split="-", fixed=TRUE),
+                            FUN=function(X) paste(X[1], X[2], sep="_")))
+sampleNames(P2.flow.data) <- sample.ids
+
+# subset samples into group A
+P2.flow.data <- P2.flow.data[1:6]
+
+# remove samples with < 1000 events recorded
+extract <- numeric(0)
+for(x in seq_len(length(P2.flow.data))){
+  events <- nrow(P2.flow.data[[x]])
+  if(events < 1000){
+    extract <- c(extract, x)
+  }
+}
+
+P2.fs_filt <- P2.flow.data[seq(along=P2.flow.data)]
+if(length(extract)){P2.fs_filt <- P2.fs_filt[-(extract),]}
+
+# remove channels that aren't interesting
+param.desc <-  pData(parameters(P2.flow.data[[1]]))[, "desc"]
+names(param.desc) <- colnames(P2.flow.data[[1]])
+param.desc[is.na(param.desc)] <- names(param.desc)[is.na(param.desc)]
+param.meta <- do.call(cbind.data.frame,
+                      list("Param"=names(param.desc),
+                           "Marker"=param.desc))
+
+# transform the data
+arcTrans <- arcsinhTransform()
+logTrans <- logTransform()
+biexpTrans <- biexponentialTransform()
+scaleTrans <- scaleTransform()
+logicleTrans <- logicleTransform()
+linearTrans <- linearTransform()
+
+# transform each paramter
+transform1 <- transformList("V1-A", biexpTrans)
+transform2 <- transformList("V2-A", biexpTrans)
+transform3 <- transformList("B1-A", biexpTrans)
+transform4 <- transformList("B2-A", biexpTrans)
+transform5 <- transformList("B3-A", biexpTrans)
+transform6 <- transformList("B4-A", biexpTrans)
+transform7 <- transformList("R1-A", biexpTrans)
+transform8 <- transformList("R2-A", biexpTrans)
+transformForwardH <- transformList("FSC-H", biexpTrans)
+transformSideA <- transformList("SSC-A", biexpTrans)
+transformForwardA <- transformList("FSC-A", biexpTrans)
+
+P2.fs_filt <- transform(P2.fs_filt, transform1)
+P2.fs_filt <- transform(P2.fs_filt, transform2)
+P2.fs_filt <- transform(P2.fs_filt, transform3)
+P2.fs_filt <- transform(P2.fs_filt, transform4)
+P2.fs_filt <- transform(P2.fs_filt, transform5)
+P2.fs_filt <- transform(P2.fs_filt, transform6)
+P2.fs_filt <- transform(P2.fs_filt, transform7)
+P2.fs_filt <- transform(P2.fs_filt, transform8)
+
+# gate on leukocytes from FSC and SSC
+# ggcyto(P2.fs_filt[1:6], aes(x=`FSC-A`, y=`SSC-A`)) +
+#   geom_hex(bins=128) +
+#   lims(x=c(0, 2.5e5), y=c(0, 1e5))
+
+# set up a CD3 gate
+# setup side scatter and CD3 gates
+ssc.points <- c(0, 5e4, 6e4, 7.5e4, 7.5e4, 0)
+fsc.points <- c(0, 1e3, 1e5, 1.5e5, 2.75e5, 2.75e5)
+
+leuko.gate <- polygonGate(filterId="Leukocytes", .gate=cbind("SSC-A"=ssc.points, "FSC-A"=fsc.points))
+leuko.filter <- filter(P2.fs_filt, leuko.gate)
+leuko.gates <- lapply(leuko.filter, 
+                      function(res) filterDetails(res, "Leukocytes")$filter)
+
+# subset all CD3+ cells before all other analyses
+P2.leuko <- Subset(P2.fs_filt, leuko.gate)
+```
+
+
+```{r, fig.height=2.75, fig.width=2.75}
+leuko.p <- ggcyto(P2.fs_filt[1], aes(x=`FSC-A`, y=`SSC-A`)) +
+  geom_hex(bins=128) +
+  lims(x=c(0, 2.5e5), y=c(0, 2.5e5)) +
+  theme_mike() +
+  labs(x="FSC-A", y="SSC-A") +
+  theme(strip.text=element_blank()) +
+  geom_gate(leuko.gates)
+
+ggsave(leuko.p,
+       filename="~/Dropbox/Noise_FACS/Replication_cohorts/Milieu_Interieur/plot.dir/P2_leuko_gate.png",
+       height=2.75, width=2.75, dpi=300)
+
+leuko.p
+```
+
+
+```{r}
+#################################################
+## need to align main parameters before gating ##
+#################################################
+### some parameters aren't being registered properly
+# might need to only select cells with values > 0
+
+# might need to split the parameters to get those with 2 peaks
+# properly aligned compare to those with shoulder peaks.
+# I need to warp some parameters separately to others
+pars <- colnames(P2.leuko)[c(8, 11, 14, 17, 20, 23, 26, 29)]
+second.warp <- c("B1-A", "B4-A")
+third.warp <- c("R1-A")
+P2.warping <- warpSet(P2.leuko, stains=setdiff(pars, c(second.warp, third.warp)))
+P2.warping <- warpSet(P2.warping, stains=second.warp, peakNr=2)
+P2.warping <- warpSet(P2.warping, stains=third.warp, bwFac = 1, nbreaks=20, peakNr=2)
+
+densityplot(x=~`R1-A`,
+            data=P2.warping,
+            channel=c("R1-A"))
+```
+
+
+```{r}
+# set up gating scheme using a GatingSet object
+P2.gs <- GatingSet(P2.warping)
+```
+
+```{r}
+# rm(list=c("P2.warping", "P2.flow.data", "P2.fs_filt",
+#           "P2.leuko"))
+# gc()
+```
+
+```{r}
+# set up a singlets gate
+# setup forward and side scatter gates
+width.points <- c(1.5e5, 1.5e5, 2.2e5, 2.2e5, 1.5e5)
+height.points <- c(1e4, 2e5, 2e5, 1e4, 1e4)
+singlet.gate <- polygonGate(filterId="Singlet", .gate=cbind("FSC-H"=height.points, "FSC-W"=width.points))
+
+flowWorkspace::add(P2.gs, singlet.gate, parent="root")
+recompute(P2.gs)
+```
+
+
+```{r, fig.height=2.75, fig.width=2.75}
+singlet.p <- ggcyto(P2.gs[1], aes(x=`FSC-H`, y=`FSC-W`), subset="root") +
+  geom_hex(bins=128) +
+  lims(x=c(0, 2.5e5), y=c(0, 2.5e5)) +
+  theme_mike() +
+  labs(x="FSC-H", y="FSC-W") +
+  theme(strip.text=element_blank()) +
+  geom_gate(singlet.gate)
+
+ggsave(singlet.p,
+       filename="~/Dropbox/Noise_FACS/Replication_cohorts/Milieu_Interieur/plot.dir/P2_singlet_gate.png",
+       height=2.75, width=2.75, dpi=300)
+
+singlet.p
+```
+
+
+```{r}
+# forward and side scater gate
+ssc.cov <- matrix(c(2e9, 1e6, 1.5e9, 1e10), ncol=2,
+                  dimnames=list(c("SSC-A", "FSC-H"), c("SSC-A", "FSC-H")))
+ssc.mean <- c("SSC-A"=2e4, "FSC-H"=2.5e4)
+ssc.ellipsoid <- ellipsoidGate(filterId="SSC.Ellipse", .gate=ssc.cov, mean=ssc.mean)
+
+flowWorkspace::add(P2.gs, ssc.ellipsoid, parent="Singlet")
+recompute(P2.gs)
+```
+
+
+```{r, fig.height=2.75, fig.width=2.75}
+covar.p <- ggcyto(P2.gs[1], aes(x=`SSC-A`, y=`FSC-H`), subset="Singlet") +
+  geom_hex(bins=128) +
+  lims(x=c(0, 2.5e5), y=c(0, 2.5e5)) +
+  theme_mike() +
+  labs(x="SSC-A", y="FSC-H") +
+  theme(strip.text=element_blank()) +
+  geom_gate(ssc.ellipsoid)
+
+ggsave(covar.p,
+       filename="~/Dropbox/Noise_FACS/Replication_cohorts/Milieu_Interieur/plot.dir/P2_covar_gate.png",
+       height=2.75, width=2.75, dpi=300)
+
+covar.p
+```
+
+
+
+```{r}
+# set up a viability gate
+# set up a singlets gate
+# setup forward and side scatter gates
+side.points <- c(0, 7.5e4, 7.5e4, 0, 0)
+viability.points <- c(0, 0, 9, 9, 0)
+viability.gate <- polygonGate(filterId="Live", .gate=cbind("SSC-A"=side.points, "V2-A"=viability.points))
+
+flowWorkspace::add(P2.gs, viability.gate, parent="SSC.Ellipse")
+recompute(P2.gs)
+```
+
+
+```{r, fig.height=2.75, fig.width=2.75}
+live.p <- ggcyto(P2.gs[1], aes(x=`SSC-A`, y=`V2-A`), subset="SSC.Ellipse") +
+  geom_hex(bins=128) +
+  lims(x=c(0, 2.5e5), y=c(0, 12)) +
+  theme_mike() +
+  labs(x="SSC-A", y="Viability") +
+  theme(strip.text=element_blank()) +
+  geom_gate(viability.gate)
+
+ggsave(live.p,
+       filename="~/Dropbox/Noise_FACS/Replication_cohorts/Milieu_Interieur/plot.dir/P2_live_gate.png",
+       height=2.75, width=2.75, dpi=300)
+
+live.p
+```
+
+
+```{r}
+# plot CD4 Vs CD8 to get major T cell subsets
+#ggcyto(P2.gs[1:6], aes(x=`R2-A`, y=`B4-A`), subset="Live") +
+#  geom_hex(bins=256) +
+#  lims(x=c(0, 12), y=c(0, 12))
+
+# might need 4 different gates to get the two SP populations, then the DP and DN cells
+cd8.points <- c(7.5, 12, 12, 7.5, 7.5)
+cd4.points <- c(0, 0, 7, 7, 0)
+cd8.gate <- polygonGate(filterId="CD8", .gate=cbind("B4-A"=cd8.points, "R2-A"=cd4.points))
+
+# might need 4 different gates to get the two SP populations, then the DP and DN cells
+cd8.points <- c(8, 8, 0, 0, 8)
+cd4.points <- c(7.5, 11, 11, 7.5, 7.5)
+cd4.gate <- polygonGate(filterId="CD4", .gate=cbind("B4-A"=cd8.points, "R2-A"=cd4.points))
+
+# might need 4 different gates to get the two SP populations, then the DP and DN cells
+cd8.points <- c(0, 7.5, 7.5, 0, 0)
+cd4.points <- c(0, 0, 7, 7, 0)
+DN.gate <- polygonGate(filterId="DN", .gate=cbind("B4-A"=cd8.points, "R2-A"=cd4.points))
+
+# might need 4 different gates to get the two SP populations, then the DP and DN cells
+cd8.points <- c(8, 12, 12, 8, 8)
+cd4.points <- c(7, 7, 11, 11, 7)
+DP.gate <- polygonGate(filterId="DP", .gate=cbind("B4-A"=cd8.points, "R2-A"=cd4.points))
+```
+
+
+```{r, fig.height=2.75, fig.width=2.75}
+# # plot CD4 Vs CD8 to get major T cell subsets
+tcell.p <- ggcyto(P2.gs[1], aes(x=`R2-A`, y=`B4-A`), subset="Live") +
+  geom_hex(bins=256) +
+  labs(x="CD4", y="CD8") +
+  lims(x=c(0, 12), y=c(0, 12)) +
+  theme_mike() +
+  theme(strip.text=element_blank()) +
+  geom_gate(cd8.gate) +
+  geom_gate(cd4.gate) +
+  geom_gate(DN.gate) +
+  geom_gate(DP.gate)
+
+ggsave(tcell.p,
+       filename="~/Dropbox/Noise_FACS/Replication_cohorts/Milieu_Interieur/plot.dir/P2_tcell_gate.png",
+       height=2.75, width=2.75, dpi=300)
+
+tcell.p
+```
+
+```{r}
+# add the T cell gates
+flowWorkspace::add(P2.gs, cd4.gate, parent="Live")
+recompute(P2.gs)
+
+flowWorkspace::add(P2.gs, cd8.gate, parent="Live")
+recompute(P2.gs)
+
+flowWorkspace::add(P2.gs, DN.gate, parent="Live")
+recompute(P2.gs)
+
+flowWorkspace::add(P2.gs, DP.gate, parent="Live")
+recompute(P2.gs)
+```
+
+```{r}
+# extract each gate and re-warp them
+# might need to split the parameters to get those with 2 peaks
+# properly aligned compare to those with shoulder peaks.
+# I need to warp some parameters separately to others
+
+######################################################################################
+# need to loop over each terminal node, extract into a new flowSet and then warp them
+# its not possible to add new gates to the GatingSet with the re-warped values
+# so I'll extract the single-cell expression values on the fly as I define each gate
+# I need to be careful because `samp.list` keep hold of these through the entire script
+#####################################################################################
+
+all.nodes <- getNodes(P2.gs)[5:length(getNodes(P2.gs))]
+flowset.list <- list()
+
+## this contains all of the processed single-cell measurements
+samp.list <- list()
+
+for(i in seq_along(all.nodes)){
+  node <- all.nodes[i]
+  flow.i <- getData(P2.gs, y=node)
+  
+  # remove samples with < 1000 events recorded
+  extract <- numeric(0)
+  for(x in seq_len(length(flow.i))){
+    events <- nrow(flow.i[[x]])
+    if(events < 10){
+      extract <- c(extract, x)
+    }
+  }
+  
+  flow.i_filt <- flow.i[seq(along=flow.i)]
+  if(length(extract)){flow.i_filt <- flow.i_filt[-(extract),]}
+  
+  pars <- colnames(flow.i_filt)[c(8, 11, 14, 17, 20, 23, 26, 29)]
+  second.warp <- c("R1-A", "R2-A")
+  third.warp <- c("B1-A")
+  P2.warping <- warpSet(flow.i_filt, stains=setdiff(pars, c(second.warp, third.warp)))
+  P2.warping <- warpSet(P2.warping, stains=second.warp, bwFac=1.25)
+  P2.warping <- warpSet(P2.warping, stains=third.warp, bwFac=0.75, nbreaks=20)
+  flowset.list[[node]] <- P2.warping
+  
+  # densityplot(x=~`B1-A`,
+  #             data=P2.warping,
+  #             channel=c("B1-A"))
+  
+  print(node)
+  
+  samp.names <- sampleNames(P2.warping)
+  node.list <- list()
+  for(x in seq_along(samp.names)){
+    samp <- samp.names[x]
+    samp.flow <- P2.warping[[samp]]
+    samp.mat <- exprs(samp.flow)
+    if(nrow(samp.mat) > 1){
+      samp.mat <- samp.mat[, c("FSC-A", "SSC-A", "FSC-H", pars)]
+      cell.prefix <- paste(samp, gsub(node, pattern="/", replacement="_"), sep=".")
+      cell.names <- paste(cell.prefix, paste0("Cell", 1:nrow(samp.mat)), sep=".")
+      rownames(samp.mat) <- cell.names
+      node.list[[samp]] <- samp.mat
+    } else if(nrow(samp.mat) < 1 & nrow(samp.mat) > 0){
+      samp.mat <- as.matrix(samp.mat[, c("FSC-A", "SSC-A", "FSC-H", pars)], ncol=length(pars))
+      cell.prefix <- paste(samp, gsub(node, pattern="/", replacement="_"), sep=".")
+      cell.names <- paste(cell.prefix, paste0("Cell", 1:nrow(samp.mat)), sep=".")
+      rownames(samp.mat) <- cell.names
+      node.list[[samp]] <- samp.mat
+    }
+  }
+  samp.list[[node]] <- do.call(rbind.data.frame,
+                               node.list)
+}
+
+# T cell groups defined by this panel:
+# naive T regs
+# memory T regs
+# activated T regs
+
+# remove samples with < 1000 events recorded
+CD4.flow <- flowset.list[["/Singlet/SSC.Ellipse/Live/CD4"]]
+extract <- numeric(0)
+for(x in seq_len(length(CD4.flow))){
+  events <- nrow(CD4.flow[[x]])
+  if(events < 1000){
+    extract <- c(extract, x)
+  }
+}
+
+P2.CD4_filt <- CD4.flow[seq(along=CD4.flow)]
+if(length(extract)){P2.CD4_filt <- P2.CD4_filt[-(extract),]}
+
+# remove samples with < 1000 events recorded
+CD8.flow <- flowset.list[["/Singlet/SSC.Ellipse/Live/CD8"]]
+extract <- numeric(0)
+for(x in seq_len(length(CD8.flow))){
+  events <- nrow(CD8.flow[[x]])
+  if(events < 1000){
+    extract <- c(extract, x)
+  }
+}
+
+P2.CD8_filt <- CD8.flow[seq(along=CD8.flow)]
+if(length(extract)){P2.CD8_filt <- P2.CD8_filt[-(extract),]}
+
+# define a GatingSet object for CD4 and CD8 T cells
+P2.CD4.gs <- GatingSet(P2.CD4_filt)
+P2.CD8.gs <- GatingSet(P2.CD8_filt)
+```
+
+```{r}
+# rm(list=c("P2.CD4_filt", "P2.CD8_filt", "CD4.flow", "CD8.flow", "P2.warping", "flowset.list"))
+# gc()
+```
+
+```{r}
+## Select the CD127- CD25+ cells T regs first
+cd127.points <- c(4, 4, 4, 5, 8, 7.5, 7.5, 6.75, 6.5, 6, 4)
+cd25.points <- c(6, 7.75, 10, 11, 11, 8.75, 8.25, 8.25, 7.75, 6.75, 6)
+treg.gate <- polygonGate(filterId="Treg", .gate=cbind("B2-A"=cd25.points, "R1-A"=cd127.points))
+
+flowWorkspace::add(P2.CD4.gs, treg.gate, parent="root")
+recompute(P2.CD4.gs)
+
+flowWorkspace::add(P2.CD8.gs, treg.gate, parent="root")
+recompute(P2.CD8.gs)
+```
+
+
+```{r, fig.height=2.75, fig.width=2.75}
+# # plot CD4 Vs CD8 to get major T cell subsets
+treg.p <- ggcyto(P2.CD4.gs[1], aes(x=`B2-A`, y=`R1-A`), subset="root") +
+  geom_hex(bins=128) +
+  labs(x="CD25", y="CD127") +
+  lims(x=c(0, 12), y=c(0, 12)) +
+  theme_mike() +
+  theme(strip.text=element_blank()) +
+  geom_gate(treg.gate)
+
+ggsave(treg.p,
+       filename="~/Dropbox/Noise_FACS/Replication_cohorts/Milieu_Interieur/plot.dir/P2_Treg_gate.png",
+       height=2.75, width=2.75, dpi=300)
+
+treg.p
+```
+
+
+
+```{r}
+#######################
+# Naive HLADR-CD45RA+ #
+#######################
+# naive T reg cells express CD45RA but lack HLA-DR
+cd45ra.points <- c(7.5, 7.5, 12, 12, 7.5)
+hladr.points <- c(0, 7, 7, 0, 0)
+tregnaive.gate <- polygonGate(filterId="naiveTreg", .gate=cbind("B3-A"=hladr.points, "B1-A"=cd45ra.points))
+
+flowWorkspace::add(P2.CD4.gs, tregnaive.gate, parent="/Treg")
+recompute(P2.CD4.gs)
+
+flowWorkspace::add(P2.CD8.gs, tregnaive.gate, parent="/Treg")
+recompute(P2.CD8.gs)
+
+###########################
+# activated HLADR+CD45RA- #
+###########################
+# central memmory T cells express HLA-DR but lack CD45RA
+cd45ra.points <- c(2.5, 2.5, 7.5, 7.5, 2.5)
+hladr.points <- c(7, 11, 11, 7, 7)
+tregact.gate <- polygonGate(filterId="ActivatedTreg", .gate=cbind("B3-A"=hladr.points, "B1-A"=cd45ra.points))
+
+flowWorkspace::add(P2.CD4.gs, tregact.gate, parent="/Treg")
+recompute(P2.CD4.gs)
+
+flowWorkspace::add(P2.CD8.gs, tregact.gate, parent="/Treg")
+recompute(P2.CD8.gs)
+
+#######################
+# memory HLADR-CD45RA- #
+#######################
+#  memmory T reg cells lack HLADR and CD45RA
+cd45ra.points <- c(2.5, 2.5, 7.5, 7.5, 2.5)
+hladr.points <- c(0, 7, 7, 0, 0)
+tregem.gate <- polygonGate(filterId="memTreg", .gate=cbind("B3-A"=hladr.points, "B1-A"=cd45ra.points))
+
+flowWorkspace::add(P2.CD4.gs, tregem.gate, parent="/Treg")
+recompute(P2.CD4.gs)
+
+flowWorkspace::add(P2.CD8.gs, tregem.gate, parent="/Treg")
+recompute(P2.CD8.gs)
+```
+
+```{r, fig.height=2.75, fig.width=2.75}
+subt.p <- ggcyto(P2.CD4.gs[1], aes(x=`B3-A`, y=`B1-A`), subset="/Treg") +
+  geom_hex(bins=64) +
+  labs(x="HLA-DR", y="CD45RA") +
+  lims(x=c(0, 12), y=c(0, 12)) +
+  theme_mike() +
+  theme(strip.text=element_blank()) +
+  geom_gate(tregnaive.gate) +
+  geom_gate(tregact.gate) +
+  geom_gate(tregem.gate)
+
+ggsave(subt.p,
+       filename="~/Dropbox/Noise_FACS/Replication_cohorts/Milieu_Interieur/plot.dir/P2_subTreg_gate.png",
+       height=2.75, width=2.75, dpi=300)
+
+subt.p
+```
+
+```{r}
+# flush all the files out before the next panel
+sink(file="/dev/null")
+rm(list=ls())
+gc()
+sink(file=NULL)
+```
+
+
+## Panel 3
+
+```{r}
+## MI flow cytometry processing
+###############################
+### Panel 3 - MAIT/NKT cells ##
+###############################
+source("~/Dropbox/R_sessions/GGMike/theme_mike.R")
+
+print("Panel 3A")
+path.to.files <- "~/Dropbox/Noise_FACS/Replication_cohorts/Milieu_Interieur/fcs_files/"
+P3.flow.data <- read.flowSet(path=path.to.files,
+                             transformation=FALSE, pattern="P03")
+sample.ids <- unlist(lapply(strsplit(x=sampleNames(P3.flow.data), split="-", fixed=TRUE),
+                            FUN=function(X) paste(X[1], X[2], sep="_")))
+sampleNames(P3.flow.data) <- sample.ids
+
+# subset samples into group A
+P3.flow.data <- P3.flow.data[1:6]
+
+# there is no compensation matrix in these files
+# comp.matrix <- keyword(P3.flow.data[[1]])$`$SPILLOVER`
+# P3.flow.data <- compensate(P3.flow.data, spillover <- comp.matrix)
+
+# remove samples with < 1000 events recorded
+extract <- numeric(0)
+for(x in seq_len(length(P3.flow.data))){
+  events <- nrow(P3.flow.data[[x]])
+  if(events < 10000){
+    extract <- c(extract, x)
+  }
+}
+
+P3.fs_filt <- P3.flow.data[seq(along=P3.flow.data)]
+if(length(extract)){P3.fs_filt <- P3.fs_filt[-(extract),]}
+
+## subset P3.fs_filt for testing
+#P3.fs_filt <- P3.fs_filt[1:20]
+
+# remove channels that aren't interesting
+param.desc <-  pData(parameters(P3.flow.data[[1]]))[, "desc"]
+names(param.desc) <- colnames(P3.flow.data[[1]])
+param.desc[is.na(param.desc)] <- names(param.desc)[is.na(param.desc)]
+param.meta <- do.call(cbind.data.frame,
+                      list("Param"=names(param.desc),
+                           "Marker"=param.desc))
+
+# transform the data
+biexpTrans <- biexponentialTransform()
+
+# transform each paramter
+transform1 <- transformList("V1-A", biexpTrans)
+transform2 <- transformList("V2-A", biexpTrans)
+transform3 <- transformList("B1-A", biexpTrans)
+transform4 <- transformList("B2-A", biexpTrans)
+transform5 <- transformList("B3-A", biexpTrans)
+transform6 <- transformList("B4-A", biexpTrans)
+transform7 <- transformList("R1-A", biexpTrans)
+transform8 <- transformList("R2-A", biexpTrans)
+
+P3.fs_filt <- transform(P3.fs_filt, transform1)
+P3.fs_filt <- transform(P3.fs_filt, transform2)
+P3.fs_filt <- transform(P3.fs_filt, transform3)
+P3.fs_filt <- transform(P3.fs_filt, transform4)
+P3.fs_filt <- transform(P3.fs_filt, transform5)
+P3.fs_filt <- transform(P3.fs_filt, transform6)
+P3.fs_filt <- transform(P3.fs_filt, transform7)
+P3.fs_filt <- transform(P3.fs_filt, transform8)
+
+################################################
+## There are clearly issues with gates being 
+## affected by indvidual-level variation, such as 
+## age and confounding batch effects
+## Parameters will need to be warped prior to each gate definition
+######################################
+
+### Warp CD3 before gating
+pars <- c("V1-A")
+P3.warping <- warpSet(P3.fs_filt, stains=pars, bwFac=2, peakNr=2)
+
+# densityplot(x=~`V1-A`,
+#             data=P1.warping,
+#             channel=c("V1-A"))
+
+# gate on CD3+ cells
+# ggcyto(P3.warping[1:6], aes(x=`CD3-A`, y=`SSC-H`)) +
+#   geom_hex(bins=128) +
+#   lims(x=c(0, 12), y=c(0, 2.7e5))
+```
+
+
+```{r}
+# set up a CD3 gate
+# setup side scatter and CD3 gates
+side.points <- c(0, 0, 1.0e5, 1.0e5, 0)
+cd3.points <- c(7.9, 12, 12, 7.9, 7.9)
+
+cd3.gate <- polygonGate(filterId="CD3", .gate=cbind("SSC-A"=side.points, "V1-A"=cd3.points))
+cd3.filter <- filter(P3.warping, cd3.gate)
+cd3.gates <- lapply(cd3.filter, 
+                    function(res) filterDetails(res, "CD3")$filter)
+
+# subset all CD3+ cells before all other analyses
+P3.cd3 <- Subset(P3.warping, cd3.gate)
+```
+
+
+```{r, fig.height=2.75, fig.width=2.75}
+cd3.p <- ggcyto(P3.warping[1], aes(x=`CD3-A`, y=`SSC-A`)) +
+  geom_hex(bins=128) +
+  lims(x=c(0, 12), y=c(0, 2.7e5)) +
+  labs(x="CD3", y="SSC-A") +
+  theme_mike() +
+  theme(strip.text=element_blank()) +
+  geom_gate(cd3.gates)
+
+ggsave(cd3.p,
+       filename="~/Dropbox/Noise_FACS/Replication_cohorts/Milieu_Interieur/plot.dir/P3_cd3_gate.png",
+       height=2.75, width=2.75)
+
+cd3.p
+```
+
+
+```{r}
+# # gate on singlets
+# ggcyto(P3.warping[1:6], aes(x=`FSC-H`, y=`FSC-W`)) +
+#   geom_hex(bins=128) +
+#   lims(x=c(0, 3e5), y=c(0, 3e5))
+
+# set up a singlets gate
+# setup forward and side scatter gates
+width.points <- c(1.5e5, 1.5e5, 2.2e5, 2.2e5, 1.5e5)
+height.points <- c(1e4, 2e5, 2e5, 1e4, 1e4)
+singlet.gate <- polygonGate(filterId="Singlet", .gate=cbind("FSC-H"=height.points, "FSC-W"=width.points))
+singlet.filter <- filter(P3.cd3, singlet.gate)
+singlet.gates <- lapply(singlet.filter, 
+                        function(res) filterDetails(res, "Singlet")$filter)
+```
+
+
+```{r, fig.height=2.75, fig.width=2.75}
+# gate on singlets
+singlet.p <- ggcyto(P3.cd3[1], aes(x=`FSC-H`, y=`FSC-W`)) +
+  geom_hex(bins=128) +
+  lims(x=c(0, 3e5), y=c(0, 3e5)) +
+  theme_mike() +
+  labs(x="FSC-H", y="FSC-W") +
+  theme(strip.text=element_blank()) +
+  geom_gate(singlet.gates)
+
+ggsave(singlet.p,
+       filename="~/Dropbox/Noise_FACS/Replication_cohorts/Milieu_Interieur/plot.dir/P3_singlet_gate.png",
+       height=2.75, width=2.75, dpi=300)
+
+singlet.p
+```
+
+
+```{r}
+# subset all singlet cells before all other analyses
+P3.singlet <- Subset(P3.cd3, singlet.gate)
+
+# # gate on side scatter
+# ggcyto(P3.singlet[1:6], aes(x=`SSC-H`, y=`SSC-A`)) +
+#   geom_hex(bins=128) +
+#   lims(x=c(0, 2.5e5), y=c(0, 2.5e5))
+
+# set up a side scatter gate requries a covariance matrix
+# setup covariance gate
+ssc.cov <- matrix(c(2e9, 1e6, 1.5e9, 1e10), ncol=2,
+                  dimnames=list(c("SSC-H", "SSC-A"), c("SSC-H", "SSC-A")))
+ssc.mean <- c("SSC-H"=2e4, "SSC-A"=2.5e4)
+ssc.ellipsoid <- ellipsoidGate(filterId="SSC.Ellipse", .gate=ssc.cov, mean=ssc.mean)
+ssc.filter <- filter(P3.singlet, ssc.ellipsoid)
+ssc.gates <- lapply(ssc.filter, 
+                    function(res) filterDetails(res, "SSC.Ellipse")$filter)
+```
+
+
+```{r, fig.height=2.75, fig.width=2.75}
+# # gate on side scatter
+covar.p <- ggcyto(P3.singlet[1], aes(x=`SSC-H`, y=`SSC-A`)) +
+  geom_hex(bins=128) +
+  lims(x=c(0, 1.5e5), y=c(0, 1.5e5)) +
+  theme_mike() +
+  theme(strip.text=element_blank()) +
+  labs(x="SSC-H", y="SSC-A") +
+  geom_gate(ssc.ellipsoid)
+
+ggsave(covar.p,
+       filename="~/Dropbox/Noise_FACS/Replication_cohorts/Milieu_Interieur/plot.dir/P3_covar_gate.png",
+       height = 2.75, width=2.75, dpi=300)
+
+covar.p
+```
+
+
+```{r}
+# subset all singlet cells before all other analyses
+P3.ssc <- Subset(P3.singlet, ssc.gates)
+
+extract <- numeric(0)
+for(x in seq_len(length(P3.ssc))){
+  events <- nrow(P3.ssc[[x]])
+  if(events < 1000){
+    extract <- c(extract, x)
+  }
+}
+
+if(length(extract)){P3.ssc <- P3.ssc[-(extract),]}
+#################################################
+## need to align main parameters before gating ##
+#################################################
+### some parameters aren't being registered properly
+# might need to only select cells with values > 0
+
+# might need to split the parameters to get those with 2 peaks
+# properly aligned compare to those with shoulder peaks.
+# I need to warp some parameters separately to others
+pars <- colnames(P3.ssc)[c(8, 11, 14, 17, 20, 23, 26, 29)]
+second.warp <- c("B3-A", "B4-A")
+P3.warping <- warpSet(P3.ssc, stains=setdiff(pars, second.warp))
+P3.warping <- warpSet(P3.warping, stains=second.warp, peakNr=2)
+#P3.warping <- warpSet(P3.warping, stains=third.warp, bwFac = 0.75, nbreaks=20)
+
+# densityplot(x=~`B4-A`,
+#             data=P3.warping,
+#             channel=c("R1-A"))
+```
+
+
+```{r}
+# set up gating scheme using a GatingSet object
+P3.gs <- GatingSet(P3.warping)
+```
+
+
+```{r}
+# rm(list=c("P3.warping", "P3.flow.data", "P3.fs_filt",
+#           "P3.singlet", "P3.ssc", "P3.cd3"))
+# gc()
+```
+
+
+```{r}
+####################################################
+# First separate the CD3 and TCR gamma-delta cells #
+####################################################
+gdtcr.points <- c(0, 6.5, 6.5, 0, 0)
+cd3.points <- c(7.5, 7.5, 12, 12, 7.5)
+abtecell.gate <- polygonGate(filterId="CD3", .gate=cbind("V1-A"=cd3.points, "B2-A"=gdtcr.points))
+
+flowWorkspace::add(P3.gs, abtecell.gate, parent="root")
+recompute(P3.gs)
+
+gdtcr.points <- c(6.5, 7.5, 8, 8.5, 9, 9.5, 10, 10.5, 10.5, 10, 9.5, 9, 8.5, 8, 7.5, 6.5)
+cd3.points <- c(7, 7.5, 8, 8.5, 9, 9.5, 10, 10.5, 11.5, 11.5, 11.5, 11.5, 11.5, 11.5, 11.5, 10)
+gdtecell.gate <- polygonGate(filterId="gdT", .gate=cbind("V1-A"=cd3.points, "B2-A"=gdtcr.points))
+
+flowWorkspace::add(P3.gs, gdtecell.gate, parent="root")
+recompute(P3.gs)
+```
+
+
+```{r, fig.height=2.75, fig.width=2.75}
+gdt.p <- ggcyto(P3.gs[1], aes(x=`B2-A`, y=`V1-A`), subset="root") +
+  geom_hex(bins=256) +
+  lims(x=c(0, 12), y=c(0, 12)) +
+  theme_mike() +
+  theme(strip.text=element_blank()) +
+  labs(x="TCRgd", y="CD3") +
+  geom_gate(abtecell.gate) +
+  geom_gate(gdtecell.gate)
+
+ggsave(gdt.p,
+       filename="~/Dropbox/Noise_FACS/Replication_cohorts/Milieu_Interieur/plot.dir/P3_gdT_gate.png",
+       height=2.75, width=2.75, dpi=300)
+gdt.p
+```
+
+
+```{r}
+# # plot CD4 Vs CD8 to get major T cell subsets
+# ggcyto(P3.gs[1:6], aes(x=`R2-A`, y=`B4-A`), subset="CD3") +
+#   geom_hex(bins=256) +
+#   lims(x=c(0, 12), y=c(0, 12))
+
+# might need 4 different gates to get the two SP populations, then the DP and DN cells
+cd8.points <- c(7.5, 12, 12, 7.5, 7.5)
+cd4.points <- c(0, 0, 7.5, 7.5, 0)
+cd8.gate <- polygonGate(filterId="CD8", .gate=cbind("B4-A"=cd8.points, "R2-A"=cd4.points))
+
+# might need 4 different gates to get the two SP populations, then the DP and DN cells
+cd8.points <- c(7.5, 7.5, 0, 0, 7.5)
+cd4.points <- c(7.5, 11, 11, 7.5, 7.5)
+cd4.gate <- polygonGate(filterId="CD4", .gate=cbind("B4-A"=cd8.points, "R2-A"=cd4.points))
+
+# might need 4 different gates to get the two SP populations, then the DP and DN cells
+cd8.points <- c(0, 7.5, 7.5, 0, 0)
+cd4.points <- c(0, 0, 7.5, 7.5, 0)
+DN.gate <- polygonGate(filterId="DN", .gate=cbind("B4-A"=cd8.points, "R2-A"=cd4.points))
+
+# might need 4 different gates to get the two SP populations, then the DP and DN cells
+cd8.points <- c(8, 12, 12, 8, 8)
+cd4.points <- c(7.5, 7.5, 11, 11, 7.5)
+DP.gate <- polygonGate(filterId="DP", .gate=cbind("B4-A"=cd8.points, "R2-A"=cd4.points))
+```
+
+
+```{r, fig.height=2.75, fig.width=2.75}
+# # # plot CD4 Vs CD8 to get major T cell subsets
+tcell.p <- ggcyto(P3.gs[1], aes(x=`R2-A`, y=`B4-A`), subset="root") +
+  geom_hex(bins=256) +
+  labs(x="CD4", y="CD8") +
+  theme_mike() +
+  theme(strip.text=element_blank()) +
+  lims(x=c(0, 12), y=c(0, 12)) +
+  geom_gate(cd8.gate) +
+  geom_gate(cd4.gate) +
+  geom_gate(DN.gate) +
+  geom_gate(DP.gate)
+
+ggsave(tcell.p,
+       filename="~/Dropbox/Noise_FACS/Replication_cohorts/Milieu_Interieur/plot.dir/P3_abT_gate.png",
+       height=2.75, width=2.75, dpi=300)
+
+tcell.p
+```
+
+
+```{r}
+# add the T cell gates
+flowWorkspace::add(P3.gs, cd4.gate, parent="CD3")
+recompute(P3.gs)
+
+flowWorkspace::add(P3.gs, cd8.gate, parent="CD3")
+recompute(P3.gs)
+
+flowWorkspace::add(P3.gs, DN.gate, parent="CD3")
+recompute(P3.gs)
+
+flowWorkspace::add(P3.gs, DP.gate, parent="CD3")
+recompute(P3.gs)
+```
+
+
+```{r}
+# extract each gate and re-warp them
+# might need to split the parameters to get those with 2 peaks
+# properly aligned compare to those with shoulder peaks.
+# I need to warp some parameters separately to others
+
+######################################################################################
+# need to loop over each terminal node, extract into a new flowSet and then warp them
+# its not possible to add new gates to the GatingSet with the re-warped values
+# so I'll extract the single-cell expression values on the fly as I define each gate
+# I need to be careful because `samp.list` keep hold of these through the entire script
+#####################################################################################
+
+all.nodes <- getNodes(P3.gs)[3:length(getNodes(P3.gs))]
+flowset.list <- list()
+
+## this contains all of the processed single-cell measurements
+samp.list <- list()
+
+for(i in seq_along(all.nodes)){
+  node <- all.nodes[i]
+  flow.i <- getData(P3.gs, y=node)
+  
+  # remove samples with < 1000 events recorded
+  extract <- numeric(0)
+  for(x in seq_len(length(flow.i))){
+    events <- nrow(flow.i[[x]])
+    if(events < 100){
+      extract <- c(extract, x)
+    }
+  }
+  print(node)
+  flow.i_filt <- flow.i[seq(along=flow.i)]
+  if(length(extract)){
+    flow.i_filt <- flow.i_filt[-(extract),]
+  } else{
+    flow.i_filt <- flow.i_filt
+  }
+  
+  if(length(extract) < length(flow.i_filt)){
+    pars <- colnames(flow.i_filt)[c(8, 11, 14, 17, 20, 23, 26, 29)]
+    P3.warping <- warpSet(flow.i_filt, stains=pars)
+    flowset.list[[node]] <- P3.warping
+    
+    samp.names <- sampleNames(P3.warping)
+    node.list <- list()
+    for(x in seq_along(samp.names)){
+      samp <- samp.names[x]
+      samp.flow <- P3.warping[[samp]]
+      samp.mat <- exprs(samp.flow)
+      if(nrow(samp.mat) > 1){
+        samp.mat <- samp.mat[, c("FSC-A", "SSC-A", "FSC-H", pars)]
+        cell.prefix <- paste(samp, gsub(node, pattern="/", replacement="_"), sep=".")
+        cell.names <- paste(cell.prefix, paste0("Cell", 1:nrow(samp.mat)), sep=".")
+        rownames(samp.mat) <- cell.names
+        node.list[[samp]] <- samp.mat
+      } else if(nrow(samp.mat) < 1 & nrow(samp.mat) > 0){
+        samp.mat <- as.matrix(samp.mat[, c("FSC-A", "SSC-A", "FSC-H", pars)], ncol=length(pars))
+        cell.prefix <- paste(samp, gsub(node, pattern="/", replacement="_"), sep=".")
+        cell.names <- paste(cell.prefix, paste0("Cell", 1:nrow(samp.mat)), sep=".")
+        rownames(samp.mat) <- cell.names
+        node.list[[samp]] <- samp.mat
+      }
+    }
+    samp.list[[node]] <- do.call(rbind.data.frame,
+                                 node.list)
+  }
+}
+
+# T cell groups defined by this population:
+# gamma-delta T cells
+# NKT cells
+# MAIT cells
+
+# remove samples with < 1000 events recorded
+gdt.flow <- flowset.list[["/gdT"]]
+extract <- numeric(0)
+for(x in seq_len(length(gdt.flow))){
+  events <- nrow(gdt.flow[[x]])
+  if(events < 1000){
+    extract <- c(extract, x)
+  }
+}
+
+P3.gpd_filt <- gdt.flow[seq(along=gdt.flow)]
+if(length(extract)){P3.gpd_filt <- P3.gpd_filt[-(extract),]}
+```
+
+
+```{r}
+# define a GatingSet object for CD4 and CD8 T cells
+P3.gdt.gs <- GatingSet(P3.gpd_filt)
+```
+
+
+```{r}
+###############
+# NKT TCRV24+ #
+###############
+# NKT cells co-express TCR V24 and CD161
+v24.points <- c(7.75, 7.75, 11, 11, 7.75)
+cd161.points <- c(7.5, 11, 11, 7.5, 7.5)
+nkt.gate <- polygonGate(filterId="NKT", .gate=cbind("B3-A"=cd161.points, "R1-A"=v24.points))
+
+flowWorkspace::add(P3.gdt.gs, nkt.gate, parent="root")
+recompute(P3.gdt.gs)
+```
+
+
+```{r, fig.height=2.75, fig.width=2.75}
+nkt.p <- ggcyto(P3.gdt.gs[1], aes(x=`B3-A`, y=`R1-A`), subset="root") +
+  geom_hex(bins=64) +
+  labs(x="CD161", y="TCRV24") +
+  lims(x=c(0, 12), y=c(0, 12)) +
+  theme_mike() +
+  theme(strip.text=element_blank()) +
+  geom_gate(nkt.gate)
+
+ggsave(nkt.p,
+       filename="~/Dropbox/Noise_FACS/Replication_cohorts/Milieu_Interieur/plot.dir/P3_NKT_gate.png",
+       height=2.75, width=2.75, dpi=300)
+
+nkt.p
+```
+
+```{r}
+##################
+# MAIT TCR V7.2+ #
+##################
+# MAIT cells co-express TCR V.2 and CD161
+v72.points <-  c(7.75, 7.75, 11, 11, 7.75)
+cd161.points <- c(7.5, 11, 11, 7.5, 7.5)
+mait.gate <- polygonGate(filterId="MAIT", .gate=cbind("B1-A"=v72.points, "R1-A"=cd161.points))
+
+flowWorkspace::add(P3.gdt.gs, mait.gate, parent="/root")
+recompute(P3.gdt.gs)
+```
+
+
+```{r, fig.height=2.75, fig.width=2.75}
+mait.p <- ggcyto(P3.gdt.gs[1], aes(x=`B1-A`, y=`R1-A`), subset="root") +
+  geom_hex(bins=64) +
+  labs(x="CD161", y="TCRV7.2") +
+  theme_mike() +
+  theme(strip.text=element_blank()) +
+  lims(x=c(0, 12), y=c(0, 12)) +
+  geom_gate(mait.gate)
+
+ggsave(mait.p,
+       filename="~/Dropbox/Noise_FACS/Replication_cohorts/Milieu_Interieur/plot.dir/P3_MAIT_gate.png",
+       height=2.75, width=2.75, dpi=300)
+
+mait.p
+```
+
+
+```{r}
+# flush all the files out before the next panel
+sink(file="/dev/null")
+rm(list=ls())
+gc()
+sink(file=NULL)
+```
+
+## Panel 4
+
+```{r}
+print("Panel 4A")
+source("~/Dropbox/R_sessions/GGMike/theme_mike.R")
+
+path.to.files <- "~/Dropbox/Noise_FACS/Replication_cohorts/Milieu_Interieur/fcs_files/"
+P4.flow.data <- read.flowSet(path=path.to.files,
+                             transformation=FALSE, pattern="P04")
+sample.ids <- unlist(lapply(strsplit(x=sampleNames(P4.flow.data), split="-", fixed=TRUE),
+                            FUN=function(X) paste(X[1], X[2], sep="_")))
+sampleNames(P4.flow.data) <- sample.ids
+
+# subset samples into group A
+P4.flow.data <- P4.flow.data[1:6]
+
+# remove samples with < 1000 events recorded
+extract <- numeric(0)
+for(x in seq_len(length(P4.flow.data))){
+  events <- nrow(P4.flow.data[[x]])
+  if(events < 1000){
+    extract <- c(extract, x)
+  }
+}
+
+P4.fs_filt <- P4.flow.data[seq(along=P4.flow.data)]
+if(length(extract)){P4.fs_filt <- P4.fs_filt[-(extract),]}
+
+# remove channels that aren't interesting
+param.desc <-  pData(parameters(P4.flow.data[[1]]))[, "desc"]
+names(param.desc) <- colnames(P4.flow.data[[1]])
+param.desc[is.na(param.desc)] <- names(param.desc)[is.na(param.desc)]
+param.meta <- do.call(cbind.data.frame,
+                      list("Param"=names(param.desc),
+                           "Marker"=param.desc))
+
+# transform the data
+biexpTrans <- biexponentialTransform()
+
+# transform each paramter
+transform1 <- transformList("V1-A", biexpTrans)
+transform2 <- transformList("V2-A", biexpTrans)
+transform3 <- transformList("B1-A", biexpTrans)
+transform4 <- transformList("B2-A", biexpTrans)
+transform5 <- transformList("B3-A", biexpTrans)
+transform6 <- transformList("B4-A", biexpTrans)
+transform7 <- transformList("R1-A", biexpTrans)
+transform8 <- transformList("R2-A", biexpTrans)
+
+P4.fs_filt <- transform(P4.fs_filt, transform1)
+P4.fs_filt <- transform(P4.fs_filt, transform2)
+P4.fs_filt <- transform(P4.fs_filt, transform3)
+P4.fs_filt <- transform(P4.fs_filt, transform4)
+P4.fs_filt <- transform(P4.fs_filt, transform5)
+P4.fs_filt <- transform(P4.fs_filt, transform6)
+P4.fs_filt <- transform(P4.fs_filt, transform7)
+P4.fs_filt <- transform(P4.fs_filt, transform8)
+
+extract <- numeric(0)
+for(x in seq_len(length(P4.fs_filt))){
+  events <- nrow(P4.fs_filt[[x]])
+  if(events < 1000){
+    extract <- c(extract, x)
+  }
+}
+
+if(length(extract)){P4.fs_filt <- P4.fs_filt[-(extract),]}
+
+# clear up some memory before warping - it's pretty intense
+rm(list=c("transform1", "transform2", "transform3", "transform5", "transform6",
+          "transform7", "transform8"))
+gc()
+#################################################
+## need to align main parameters before gating ##
+#################################################
+### some parameters aren't being registered properly
+# might need to only select cells with values > 0
+
+# might need to split the parameters to get those with 2 peaks
+# properly aligned compare to those with shoulder peaks.
+# I need to warp some parameters separately to others
+pars <- colnames(P4.fs_filt)[c(8, 11, 14, 17, 20, 23, 26, 29)]
+second.warp <- c("R1-A", "R2-A")
+P4.warping <- warpSet(P4.fs_filt, stains=setdiff(pars, second.warp), bwFac=1.5)
+P4.warping <- warpSet(P4.warping, stains=second.warp, bwFac = 0.75, peakNr=2, nbreaks=20)
+
+# densityplot(x=~`R2-A`,
+#             data=P4.warping,
+#             channel=c("B4-A"))
+
+# # # gate on NK cells separate from other lineages, i.e. CD3/CD14
+# ggcyto(P4.warping[1:6], aes(x=`V1-A`, y=`B2-A`)) +
+#   geom_hex(bins=128) +
+#   labs(x="CD3/CD14", y="NKp46") +
+#   lims(x=c(0, 12), y=c(0, 12))
+
+
+# setup NK cell selection CD3/CD14- NKp46+
+lin.points <- c(0, 6, 7, 7.5, 7.75, 7.75, 7.75, 5, 5, 0)
+nkp46.points <- c(7, 7, 7.25, 7.5, 7.75, 8, 11, 11, 11, 11)
+
+nkcell.gate <- polygonGate(filterId="NKCell", .gate=cbind("V1-A"=lin.points, "B2-A"=nkp46.points))
+nkcell.filter <- filter(P4.warping, nkcell.gate)
+nkcell.gates <- lapply(nkcell.filter, 
+                       function(res) filterDetails(res, "NKCell")$filter)
+```
+
+
+```{r, fig.height=2.75, fig.width=2.75}
+# gate on NK cells separate from other lineages, i.e. CD3/CD14
+nk.p <- ggcyto(P4.warping[1], aes(x=`V1-A`, y=`B2-A`)) +
+  geom_hex(bins=128) +
+  labs(x="CD3/CD14", y="NKp46") +
+  theme_mike() +
+  theme(strip.text=element_blank()) +
+  lims(x=c(0, 12), y=c(0, 12)) +
+  geom_gate(nkcell.gate)
+
+ggsave(nk.p,
+       filename="~/Dropbox/Noise_FACS/Replication_cohorts/Milieu_Interieur/plot.dir/P4_nk_gate.png",
+       height=2.75, width=2.75, dpi=300)
+
+nk.p
+```
+
+
+```{r}
+# subset all CD3+ cells before all other analyses
+P4.nkcells <- Subset(P4.warping, nkcell.gates)
+
+# set up a live cell gate
+viability.points <- c(0, 0, 8.5, 8.5, 0)
+side.points <- c(0, 7.5e4, 7.5e4, 0, 0)
+live.gate <- polygonGate(filterId="Live", .gate=cbind("V2-A"=viability.points, "SSC-A"=side.points))
+live.filter <- filter(P4.nkcells, live.gate)
+live.gates <- lapply(live.filter, 
+                       function(res) filterDetails(res, "Live")$filter)
+```
+
+
+```{r, fig.height=2.75, fig.width=2.75}
+live.p <- ggcyto(P4.nkcells[1], aes(x=`SSC-A`, y=`V2-A`)) +
+  geom_hex(bins=64) +
+  lims(x=c(0, 2.5e5), y=c(0, 12)) +
+  theme_mike() +
+  theme(strip.text=element_blank()) +
+  geom_gate(live.gate)
+
+ggsave(live.p,
+       filename="~/Dropbox/Noise_FACS/Replication_cohorts/Milieu_Interieur/plot.dir/P4_live_gate.png",
+       height=2.75, width=2.75, dpi=300)
+
+live.p
+```
+
+
+```{r}
+P4.live <- Subset(P4.nkcells, live.gates)
+
+# set up a singlet gate
+height.points <- c(0, 2e5, 2e5, 0, 0)
+width.points <- c(1.5e5, 1.5e5, 2.5e5, 2.5e5, 1.5e5)
+singlet.gate <- polygonGate(filterId="Singlet", .gate=cbind("FSC-W"=width.points, "FSC-H"=height.points))
+singlet.filter <- filter(P4.live, singlet.gate)
+singlet.gates <- lapply(singlet.filter, 
+                     function(res) filterDetails(res, "Singlet")$filter)
+```
+
+
+```{r, fig.height=2.75, fig.width=2.75}
+single.p <- ggcyto(P4.live[1], aes(x=`FSC-H`, y=`FSC-W`)) +
+  geom_hex(bins=64) +
+  lims(x=c(0, 2.5e5), y=c(0, 2.5e5)) +
+  theme_mike() +
+  theme(strip.text=element_blank()) +
+  geom_gate(singlet.gate)
+
+ggsave(single.p, 
+       filename = "~/Dropbox/Noise_FACS/Replication_cohorts/Milieu_Interieur/plot.dir/P4_singlet_gate.png",
+       height=2.75, width=2.75, dpi=300)
+
+single.p
+```
+
+
+```{r}
+P4.singlet <- Subset(P4.live, singlet.gates)
+extract <- numeric(0)
+for(x in seq_len(length(P4.singlet))){
+  events <- nrow(P4.singlet[[x]])
+  if(events < 1000){
+    extract <- c(extract, x)
+  }
+}
+
+if(length(extract)){P4.singlet <- P4.singlet[-(extract),]}
+#################################################
+## need to align main parameters before gating ##
+#################################################
+### some parameters aren't being registered properly
+# might need to only select cells with values > 0
+
+# might need to split the parameters to get those with 2 peaks
+# properly aligned compare to those with shoulder peaks.
+# I need to warp some parameters separately to others
+pars <- colnames(P4.singlet)[c(8, 11, 14, 17, 20, 23, 26, 29)]
+second.warp <- c("B4-A", "B3-A")
+P4.warping <- warpSet(P4.singlet, stains=setdiff(pars, second.warp))
+P4.warping <- warpSet(P4.warping, stains=second.warp, nbreaks=20, bwFac=1, peakNr=2)
+
+# densityplot(x=~`B3-A`,
+#             data=P4.warping,
+#             channel=c("B3-A"))
+```
+
+
+```{r}
+# set up gating scheme using a GatingSet object
+P4.gs <- GatingSet(P4.warping)
+```
+
+
+```{r}
+rm(list=c("P4.warping", "P4.flow.data", "P4.fs_filt",
+          "P4.singlet", "P4.live", "P4.nkcells"))
+gc()
+```
+
+
+```{r}
+
+########################################
+# CD16hi and CD56 brights are defined ##
+########################################
+## CD16hiCD56+
+cd56.points <- c(0, 0, 10, 9, 7.5, 0)
+cd16.points <- c(9, 12, 12, 10, 9, 9)
+cd16bright.gate <- polygonGate(filterId="CD16hi", .gate=cbind("R1-A"=cd16.points, "R2-A"=cd56.points))
+
+# add the CD16 bright gate
+flowWorkspace::add(P4.gs, cd16bright.gate, parent="root")
+recompute(P4.gs)
+
+## CD16+CD56hi
+cd56.points <- c(7, 7, 7.5, 9, 10, 11, 11, 7)
+cd16.points <- c(0, 9, 9, 10, 12, 12, 0, 0)
+cd56bright.gate <- polygonGate(filterId="CD56hi", .gate=cbind("R1-A"=cd16.points, "R2-A"=cd56.points))
+
+# add the CD56 bright gate
+flowWorkspace::add(P4.gs, cd56bright.gate, parent="root")
+recompute(P4.gs)
+```
+
+
+```{r, fig.height=2.75, fig.width=2.75}
+cd56.p <- ggcyto(P4.gs[1], aes(x=`R1-A`, y=`R2-A`), subset="root") +
+  geom_hex(bins=64) +
+  labs(x="CD16", y="CD56") +
+  lims(x=c(0, 12), y=c(0, 12)) +
+  theme_mike() +
+  theme(strip.text=element_blank()) +
+  geom_gate(cd16bright.gate) +
+  geom_gate(cd56bright.gate)
+
+ggsave(cd56.p,
+       filename = "~/Dropbox/Noise_FACS/Replication_cohorts/Milieu_Interieur/plot.dir/P4_CD56_gate.png",
+       height=2.75, width=2.75, dpi=300)
+
+cd56.p
+```
+
+
+```{r}
+# flush all the files out before the next panel
+sink(file="/dev/null")
+rm(list=ls())
+gc()
+sink(file=NULL)
+```
+
+
+## Panel 5
+
+```{r}
+## MI flow cytometry processing
+#####################################
+### Panel 5 - Major lineages panel ##
+#####################################
+print("Panel 5A")
+source("~/Dropbox/R_sessions/GGMike/theme_mike.R")
+
+path.to.files <- "~/Dropbox/Noise_FACS/Replication_cohorts/Milieu_Interieur/fcs_files/"
+
+P5.flow.data <- read.flowSet(path=path.to.files,
+                             transformation=FALSE, pattern="P05")
+sample.ids <- unlist(lapply(strsplit(x=sampleNames(P5.flow.data), split="-", fixed=TRUE),
+                            FUN=function(X) paste(X[1], X[2], sep="_")))
+sampleNames(P5.flow.data) <- sample.ids
+
+# subset samples into group B
+P5.flow.data <- P5.flow.data[1:6]
+
+# remove samples with < 1000 events recorded
+extract <- numeric(0)
+for(x in seq_len(length(P5.flow.data))){
+  events <- nrow(P5.flow.data[[x]])
+  if(events < 1000){
+    extract <- c(extract, x)
+  }
+}
+
+P5.fs_filt <- P5.flow.data[seq(along=P5.flow.data)]
+if(length(extract)){P5.fs_filt <- P5.fs_filt[-(extract),]}
+
+# remove channels that aren't interesting
+param.desc <-  pData(parameters(P5.fs_filt[[1]]))[, "desc"]
+names(param.desc) <- colnames(P5.fs_filt[[1]])
+param.desc[is.na(param.desc)] <- names(param.desc)[is.na(param.desc)]
+param.meta <- do.call(cbind.data.frame,
+                      list("Param"=names(param.desc),
+                           "Marker"=param.desc))
+
+# transform the data
+biexpTrans <- biexponentialTransform()
+
+# transform each paramter
+transform1 <- transformList("V1-A", biexpTrans)
+transform2 <- transformList("V2-A", biexpTrans)
+transform3 <- transformList("B1-A", biexpTrans)
+transform4 <- transformList("B2-A", biexpTrans)
+transform5 <- transformList("B3-A", biexpTrans)
+transform6 <- transformList("B4-A", biexpTrans)
+transform7 <- transformList("R1-A", biexpTrans)
+transform8 <- transformList("R2-A", biexpTrans)
+# transformForwardH <- transformList("FSC-H", biexpTrans)
+# transformSideA <- transformList("SSC-A", biexpTrans)
+# transformForwardA <- transformList("FSC-A", biexpTrans)
+
+P5.fs_filt <- transform(P5.fs_filt, transform1)
+P5.fs_filt <- transform(P5.fs_filt, transform2)
+P5.fs_filt <- transform(P5.fs_filt, transform3)
+P5.fs_filt <- transform(P5.fs_filt, transform4)
+P5.fs_filt <- transform(P5.fs_filt, transform5)
+P5.fs_filt <- transform(P5.fs_filt, transform6)
+P5.fs_filt <- transform(P5.fs_filt, transform7)
+P5.fs_filt <- transform(P5.fs_filt, transform8)
+
+# remove samples with < 1000 events recorded
+extract <- numeric(0)
+for(x in seq_len(length(P5.fs_filt))){
+  events <- nrow(P5.fs_filt[[x]])
+  if(events < 1000){
+    extract <- c(extract, x)
+  }
+}
+
+if(length(extract)){P5.fs_filt <- P5.fs_filt[-(extract),]}
+
+#################################################
+## need to align main parameters before gating ##
+#################################################
+### some parameters aren't being registered properly
+# might need to only select cells with values > 0
+print("First warping")
+
+# might need to split the parameters to get those with 2 peaks
+# properly aligned compare to those with shoulder peaks.
+# I need to warp some parameters separately to others
+pars <- colnames(P5.fs_filt)[c(8, 11, 14, 17, 20, 23, 26, 29)]
+second.warp <- c("B2-A", "B4-A", "R2-A")
+third.warp <- c("B1-A")
+P5.warping <- warpSet(P5.fs_filt, stains=setdiff(pars, c(second.warp, third.warp)))
+P5.warping <- warpSet(P5.warping, stains=second.warp, peakNr=2, bwFac=1.5)
+P5.warping <- warpSet(P5.warping, stains=third.warp, bwFac = 2.5)
+
+# densityplot(x=~`B1-A`,
+#             data=P5.warping,
+#             channel=c("V2-A"))
+
+# gate on all CD45+ cells
+# ggcyto(P5.fs_filt, aes(x=`FSC-A`, y=`B2-A`)) +
+#   geom_hex(bins=128) +
+#   labs(x="FSC-A", y="CD45") +
+#   lims(x=c(0, 2.5e5), y=c(0, 12))
+
+# set up a CD45+ gate
+cd45.points <- c(8, 8, 12.5, 12.5, 8)
+fsc.points <- c(0, 2.5e5, 2.5e5, 0, 0)
+
+haem.gate <- polygonGate(filterId="CD45", .gate=cbind("B2-A"=cd45.points, "FSC-A"=fsc.points))
+haem.filter <- filter(P5.fs_filt, haem.gate)
+haem.gates <- lapply(haem.filter, 
+                     function(res) filterDetails(res, "CD45")$filter)
+```
+
+
+```{r, fig.width=2.75, fig.height=2.75}
+cd45.p <- ggcyto(P5.fs_filt[1], aes(x=`FSC-A`, y=`B2-A`)) +
+  geom_hex(bins=128) +
+  labs(x="FSC-A", y="CD45") +
+  lims(x=c(0, 2.5e5), y=c(0, 12)) +
+  theme_mike() +
+  theme(strip.text=element_blank()) +
+  geom_gate(haem.gate)
+
+ggsave(cd45.p,
+       filename="~/Dropbox/Noise_FACS/Replication_cohorts/Milieu_Interieur/plot.dir/P5_cd45_gate.png",
+       height=2.75, width=2.75, dpi=300)
+
+cd45.p
+```
+
+
+```{r}
+# subset all CD3+ cells before all other analyses
+P5.cd45 <- Subset(P5.fs_filt, haem.gates)
+
+# set up a singlets gate
+# setup forward and side scatter gates
+width.points <- c(1.5e5, 1.5e5, 2.2e5, 2.2e5, 1.5e5)
+height.points <- c(1e4, 2e5, 2e5, 1e4, 1e4)
+singlet.gate <- polygonGate(filterId="Singlet", .gate=cbind("FSC-H"=height.points, "FSC-W"=width.points))
+singlet.filter <- filter(P5.cd45, singlet.gate)
+singlet.gates <- lapply(singlet.filter, 
+                        function(res) filterDetails(res, "Singlet")$filter)
+```
+
+
+```{r, fig.width=2.75, fig.height=2.75}
+single.p <- ggcyto(P5.cd45[1], aes(x=`FSC-H`, y=`FSC-W`)) +
+  geom_hex(bins=128) +
+  labs(x="FSC-H", y="FSC-W") +
+  lims(x=c(0, 2.5e5), y=c(0, 2.5e5)) +
+  theme_mike() +
+  theme(strip.text=element_blank()) +
+  geom_gate(singlet.gate)
+
+ggsave(single.p,
+       filename="~/Dropbox/Noise_FACS/Replication_cohorts/Milieu_Interieur/plot.dir/P5_singlet_gate.png",
+       height=2.75, width=2.75, dpi=300)
+
+single.p
+```
+
+
+```{r}
+P5.singlet <- Subset(P5.cd45, singlet.gates)
+
+# set up a side scatter gate requries a covariance matrix
+# setup covariance gate
+area.points <- c(0, 0, 2.5e5, 2.5e5, 1e4, 0)
+height.points <- c(0, 1e4, 2.25e5, 1.75e5, 0, 0)
+ssc.gate <- polygonGate(filterId="SSC", .gate=cbind("SSC-H"=height.points, "SSC-A"=area.points))
+ssc.filter <- filter(P5.singlet, ssc.gate)
+ssc.gates <- lapply(ssc.filter, 
+                    function(res) filterDetails(res, "SSC")$filter)
+```
+
+
+```{r, fig.width=2.75, fig.height=2.75}
+p.singlet <- ggcyto(P5.singlet[1], aes(x=`SSC-H`, y=`SSC-A`)) +
+  geom_hex(bins=128) +
+  labs(x="SSC-H", y="SSC-A") +
+  theme_mike() +
+  theme(strip.text=element_blank()) +
+  lims(x=c(0, 2.5e5), y=c(0, 2.5e5)) +
+  geom_gate(ssc.gate)
+
+ggsave(p.singlet,
+       filename="~/Dropbox/Noise_FACS/Replication_cohorts/Milieu_Interieur/plot.dir/P5_side_single.png",
+       height=2.75, width=2.75, dpi=300)
+
+p.singlet
+```
+
+
+```{r}
+P5.ssc <- Subset(P5.singlet, ssc.gates)
+# remove samples with < 1000 events recorded
+extract <- numeric(0)
+for(x in seq_len(length(P5.ssc))){
+  events <- nrow(P5.ssc[[x]])
+  if(events < 1000){
+    extract <- c(extract, x)
+  }
+}
+
+if(length(extract)){P5.ssc <- P5.ssc[-(extract),]}
+
+#################################################
+## need to align main parameters before gating ##
+#################################################
+### some parameters aren't being registered properly
+# might need to only select cells with values > 0
+
+# might need to split the parameters to get those with 2 peaks
+# properly aligned compare to those with shoulder peaks.
+# I need to warp some parameters separately to others
+pars <- colnames(P5.ssc)[c(8, 11, 14, 17, 20, 23, 26, 29)]
+second.warp <- c("V1-A")
+third.warp <- c("V2-A", "R2-A")
+P5.warping <- warpSet(P5.ssc, stains=setdiff(pars, c(second.warp, third.warp)))
+P5.warping <- warpSet(P5.warping, stains=second.warp, peakNr=2, bwFac=1.5)
+P5.warping <- warpSet(P5.warping, stains=third.warp, bwFac = 2.5)
+
+# densityplot(x=~`R2-A`,
+#             data=P5.warping,
+#             channel=c("V2-A"))
+```
+
+
+```{r}
+# set up gating scheme using a GatingSet object
+P5.gs <- GatingSet(P5.warping)
+```
+
+
+```{r}
+rm(list=c("P5.warping", "P5.flow.data", "P5.fs_filt",
+          "P5.ssc"))
+gc()
+```
+
+
+```{r}
+## First define CD19+ B cells and non-Bcells
+cd19.points <- c(8, 12, 12, 8, 8)
+cd16.points <- c(0, 0, 9, 9, 0)
+cd19.gate <- polygonGate(filterId="Bcells", .gate=cbind("R1-A"=cd19.points, "B3-A"=cd16.points))
+
+cd19.points <- c(0, 8, 8, 12, 12, 0, 0)
+cd16.points <- c(0, 0, 9, 9, 12, 12, 0)
+notcd19.gate <- polygonGate(filterId="notBcells", .gate=cbind("R1-A"=cd19.points, "B3-A"=cd16.points))
+
+# add the B cell gates
+flowWorkspace::add(P5.gs, cd19.gate, parent="root")
+recompute(P5.gs)
+
+# add the B cell gates
+flowWorkspace::add(P5.gs, notcd19.gate, parent="root")
+recompute(P5.gs)
+```
+
+
+```{r, fig.width=2.75, fig.height=2.75}
+p.bcell <- ggcyto(P5.singlet[1], aes(x=`R1-A`, y=`B3-A`)) +
+  geom_hex(bins=128) +
+  labs(x="CD19", y="CD16") +
+  theme_mike() +
+  theme(strip.text=element_blank()) +
+  lims(x=c(0, 12), y=c(0, 12)) +
+  geom_gate(cd19.gate) +
+  geom_gate(notcd19.gate)
+
+ggsave(p.bcell,
+       filename="~/Dropbox/Noise_FACS/Replication_cohorts/Milieu_Interieur/plot.dir/P5_bcell_gate.png",
+       height=2.75, width=2.75, dpi=300)
+
+p.bcell
+```
+
+```{r}
+# extract each gate and re-warp them
+# might need to split the parameters to get those with 2 peaks
+# properly aligned compare to those with shoulder peaks.
+# I need to warp some parameters separately to others
+
+######################################################################################
+# need to loop over each terminal node, extract into a new flowSet and then warp them
+# its not possible to add new gates to the GatingSet with the re-warped values
+# so I'll extract the single-cell expression values on the fly as I define each gate
+# I need to be careful because `samp.list` keep hold of these through the entire script
+#####################################################################################
+
+all.nodes <- getNodes(P5.gs)[2:length(getNodes(P5.gs))]
+flowset.list <- list()
+
+## this contains all of the processed single-cell measurements
+samp.list <- list()
+
+for(i in seq_along(all.nodes)){
+  node <- all.nodes[i]
+  flow.i <- getData(P5.gs, y=node)
+  
+  # remove samples with < 1000 events recorded
+  extract <- numeric(0)
+  for(x in seq_len(length(flow.i))){
+    events <- nrow(flow.i[[x]])
+    if(events < 1000){
+      extract <- c(extract, x)
+    }
+  }
+  
+  flow.i_filt <- flow.i[seq(along=flow.i)]
+  if(length(extract)){flow.i_filt <- flow.i_filt[-(extract),]}
+  
+  pars <- colnames(flow.i_filt)[c(8, 11, 14, 17, 20, 23, 26, 29)]
+  second.warp <- c("V2-A")
+  P5.warping <- warpSet(flow.i_filt, stains=setdiff(pars, second.warp))
+  P5.warping <- warpSet(P5.warping, stains=second.warp, peakNr=2, bwFac=1)
+
+  flowset.list[[node]] <- P5.warping
+  print(node)
+  
+  samp.names <- sampleNames(P5.warping)
+  node.list <- list()
+  for(x in seq_along(samp.names)){
+    samp <- samp.names[x]
+    samp.flow <- P5.warping[[samp]]
+    samp.mat <- exprs(samp.flow)
+    if(nrow(samp.mat) > 1){
+      samp.mat <- samp.mat[, c("FSC-A", "SSC-A", "FSC-H", pars)]
+      cell.prefix <- paste(samp, gsub(node, pattern="/", replacement="_"), sep=".")
+      cell.names <- paste(cell.prefix, paste0("Cell", 1:nrow(samp.mat)), sep=".")
+      rownames(samp.mat) <- cell.names
+      node.list[[samp]] <- samp.mat
+    } else if(nrow(samp.mat) < 1 & nrow(samp.mat) > 0){
+      samp.mat <- as.matrix(samp.mat[, c("FSC-A", "SSC-A", "FSC-H", pars)], ncol=length(pars))
+      cell.prefix <- paste(samp, gsub(node, pattern="/", replacement="_"), sep=".")
+      cell.names <- paste(cell.prefix, paste0("Cell", 1:nrow(samp.mat)), sep=".")
+      rownames(samp.mat) <- cell.names
+      node.list[[samp]] <- samp.mat
+    }
+  }
+  samp.list[[node]] <- do.call(rbind.data.frame,
+                               node.list)
+}
+
+# remove samples with < 1000 events recorded
+notB.flow <- flowset.list[["/notBcells"]]
+extract <- numeric(0)
+for(x in seq_len(length(notB.flow))){
+  events <- nrow(notB.flow[[x]])
+  if(events < 1000){
+    extract <- c(extract, x)
+  }
+}
+
+P5.notb.flow <- notB.flow[seq(along=notB.flow)]
+if(length(extract)){P5.notb.flow <- P5.notb.flow[-(extract),]}
+```
+
+
+```{r}
+# instantiate a new GatingSet to continue the hierarchical gating
+P5.notb.gs <- GatingSet(P5.notb.flow)
+```
+
+
+```{r}
+# clear some memory
+rm(list=c("P5.warping", "P5.gs"))
+gc()
+```
+
+
+```{r}
+## Define T cells CD3+
+cd3.points <- c(8.5, 8.5, 12.5, 12.5, 8.5)
+cd45.points <- c(10, 12.5, 12.5, 10, 10)
+cd3.gate <- polygonGate(filterId="CD3", .gate=cbind("V1-A"=cd3.points, "B2-A"=cd45.points))
+
+cd3.points <- c(0, 0, 7.5, 7.5, 7.5, 0)
+cd45.points <- c(7, 12.5, 12.5, 12.5, 7, 7)
+notcd3.gate <- polygonGate(filterId="notCD3", .gate=cbind("V1-A"=cd3.points, "B2-A"=cd45.points))
+
+# add the B cell gates
+flowWorkspace::add(P5.notb.gs, cd3.gate, parent="root")
+recompute(P5.notb.gs)
+
+# add the B cell gates
+flowWorkspace::add(P5.notb.gs, notcd3.gate, parent="root")
+recompute(P5.notb.gs)
+```
+
+
+
+```{r, fig.width=2.75, fig.height=2.75}
+p.cd3 <- ggcyto(P5.singlet[1], aes(x=`V1-A`, y=`B2-A`)) +
+  geom_hex(bins=128) +
+  labs(x="CD3", y="CD45") +
+  theme_mike() +
+  theme(strip.text=element_blank()) +
+  lims(x=c(0, 13), y=c(0, 13)) +
+  geom_gate(cd3.gate) +
+  geom_gate(notcd3.gate)
+
+ggsave(p.cd3,
+       filename="~/Dropbox/Noise_FACS/Replication_cohorts/Milieu_Interieur/plot.dir/P5_CD3_gate.png",
+       height=2.75, width=2.75, dpi=300)
+
+p.cd3
+```
+
+
+```{r}
+##########################################
+## Next set of parameter warping steps
+##########################################
+notb.nodes <- getNodes(P5.notb.gs)[2:length(getNodes(P5.notb.gs))]
+flowset.list <- list()
+
+for(i in seq_along(notb.nodes)){
+  node <- notb.nodes[i]
+  flow.i <- getData(P5.notb.gs, y=node)
+  
+  # remove samples with < 1000 events recorded
+  extract <- numeric(0)
+  for(x in seq_len(length(flow.i))){
+    events <- nrow(flow.i[[x]])
+    if(events < 1000){
+      extract <- c(extract, x)
+    }
+  }
+  
+  flow.i_filt <- flow.i[seq(along=flow.i)]
+  if(length(extract)){flow.i_filt <- flow.i_filt[-(extract),]}
+  
+  pars <- colnames(flow.i_filt)[c(8, 11, 14, 17, 20, 23, 26, 29)]
+
+  P5.warping <- warpSet(flow.i_filt, stains=setdiff(pars, second.warp))
+  second.warp <- c("B4-A")
+  P5.warping <- warpSet(P5.warping, stains=second.warp, bwFac=2.25, nbreaks=24, peakNr=2)
+  
+  # densityplot(x=~`B4-A`,
+  #             data=P5.warping,
+  #             channel=c("V2-A"))
+  
+  flowset.list[[node]] <- P5.warping
+  print(node)
+  
+  samp.names <- sampleNames(P5.warping)
+  node.list <- list()
+  for(x in seq_along(samp.names)){
+    samp <- samp.names[x]
+    samp.flow <- P5.warping[[samp]]
+    samp.mat <- exprs(samp.flow)
+    if(nrow(samp.mat) > 1){
+      samp.mat <- samp.mat[, c("FSC-A", "SSC-A", "FSC-H", pars)]
+      cell.prefix <- paste(samp, gsub(paste0("notB", node), pattern="/", replacement="_"), sep=".")
+      cell.names <- paste(cell.prefix, paste0("Cell", 1:nrow(samp.mat)), sep=".")
+      rownames(samp.mat) <- cell.names
+      node.list[[samp]] <- samp.mat
+    } else if(nrow(samp.mat) < 1 & nrow(samp.mat) > 0){
+      samp.mat <- as.matrix(samp.mat[, c("FSC-A", "SSC-A", "FSC-H", pars)], ncol=length(pars))
+      cell.prefix <- paste(samp, gsub(paste0("notB", node), pattern="/", replacement="_"), sep=".")
+      cell.names <- paste(cell.prefix, paste0("Cell", 1:nrow(samp.mat)), sep=".")
+      rownames(samp.mat) <- cell.names
+      node.list[[samp]] <- samp.mat
+    }
+  }
+  samp.list[[paste0("notB", node)]] <- do.call(rbind.data.frame,
+                                                node.list)
+}
+
+# remove samples with < 1000 events recorded
+notCD3.flow <- flowset.list[["/notCD3"]]
+extract <- numeric(0)
+for(x in seq_len(length(notCD3.flow))){
+  events <- nrow(notCD3.flow[[x]])
+  if(events < 1000){
+    extract <- c(extract, x)
+  }
+}
+
+P5.notCD3.flow <- notCD3.flow[seq(along=notCD3.flow)]
+if(length(extract)){P5.notCD3.flow <- P5.notCD3.flow[-(extract),]}
+
+# remove samples with < 1000 events recorded
+CD3.flow <- flowset.list[["/CD3"]]
+extract <- numeric(0)
+for(x in seq_len(length(CD3.flow))){
+  events <- nrow(CD3.flow[[x]])
+  if(events < 1000){
+    extract <- c(extract, x)
+  }
+}
+
+P5.CD3.flow <- CD3.flow[seq(along=CD3.flow)]
+if(length(extract)){P5.CD3.flow <- P5.CD3.flow[-(extract),]}
+
+# instantiate a new GatingSet to continue the hierarchical gating for both partitions
+P5.notCD3.gs <- GatingSet(P5.notCD3.flow)
+P5.CD3.gs <- GatingSet(P5.CD3.flow)
+```
+
+
+```{r}
+# clear some memory
+rm(list=c("P5.notCD3.flow", "P5.CD3.flow", "P5.notb.gs"))
+gc()
+```
+
+
+```{r}
+##########################
+## Major T cell subsets ##
+##########################
+# might need 4 different gates to get the two SP populations, then the DP and DN cells
+cd8.points <- c(8, 12, 12, 8, 8)
+cd4.points <- c(0, 0, 7.5, 7.5, 0)
+cd8.gate <- polygonGate(filterId="CD8", .gate=cbind("B4-A"=cd8.points, "R2-A"=cd4.points))
+
+# might need 4 different gates to get the two SP populations, then the DP and DN cells
+cd8.points <- c(8, 8, 0, 0, 8)
+cd4.points <- c(7.5, 11, 11, 7.5, 7.5)
+cd4.gate <- polygonGate(filterId="CD4", .gate=cbind("B4-A"=cd8.points, "R2-A"=cd4.points))
+
+# might need 4 different gates to get the two SP populations, then the DP and DN cells
+cd8.points <- c(0, 7.5, 7.5, 0, 0)
+cd4.points <- c(0, 0, 7.5, 7.5, 0)
+DN.gate <- polygonGate(filterId="DN", .gate=cbind("B4-A"=cd8.points, "R2-A"=cd4.points))
+
+# might need 4 different gates to get the two SP populations, then the DP and DN cells
+cd8.points <- c(8, 12, 12, 8, 8)
+cd4.points <- c(7.5, 7.5, 11, 11, 7.5)
+DP.gate <- polygonGate(filterId="DP", .gate=cbind("B4-A"=cd8.points, "R2-A"=cd4.points))
+```
+
+
+```{r, fig.width=2.75, fig.height=2.75}
+# # plot CD4 Vs CD8 to get major T cell subsets
+abt.p <- ggcyto(P5.CD3.gs[3], aes(x=`R2-A`, y=`B4-A`), subset="root") +
+  geom_hex(bins=256) +
+  labs(x="CD4", y="CD8") +
+  theme_mike() +
+  theme(strip.text=element_blank()) +
+  lims(x=c(0, 12), y=c(0, 12)) +
+  geom_gate(cd8.gate) +
+  geom_gate(cd4.gate) +
+  geom_gate(DN.gate) +
+  geom_gate(DP.gate)
+
+ggsave(abt.p,
+       filename="~/Dropbox/Noise_FACS/Replication_cohorts/Milieu_Interieur/plot.dir/P5_abTgate.png",
+       height=2.75, width=2.75, dpi=300)
+
+abt.p
+```
+
+
+```{r}
+# add the T cell gates
+flowWorkspace::add(P5.CD3.gs, cd4.gate, parent="root")
+recompute(P5.CD3.gs)
+
+flowWorkspace::add(P5.CD3.gs, cd8.gate, parent="root")
+recompute(P5.CD3.gs)
+
+flowWorkspace::add(P5.CD3.gs, DN.gate, parent="root")
+recompute(P5.CD3.gs)
+
+flowWorkspace::add(P5.CD3.gs, DP.gate, parent="root")
+recompute(P5.CD3.gs)
+
+############################
+# NK cells on CD65 & CD16 ##
+############################
+## NK cells CD56+CD14-
+cd56.points <- c(7.5, 7.5, 9, 12, 12, 7.5)
+cd14.points <- c(0, 7.25, 7.75, 7.75, 0, 0)
+nkcell.gate <- polygonGate(filterId="NKcell", .gate=cbind("V2-A"=cd14.points, "B1-A"=cd56.points))
+
+## not NK cells CD56-
+cd56.points <- c(0, 0, 12, 12, 9, 7.5, 7.5, 0)
+cd14.points <- c(0, 12, 12, 7.75, 7.75, 7.25, 0, 0)
+notnkcell.gate <- polygonGate(filterId="notNKcell", .gate=cbind("V2-A"=cd14.points, "B1-A"=cd56.points))
+```
+
+
+```{r, fig.width=2.75, fig.height=2.75}
+nk.p  <- ggcyto(P5.notCD3.gs[1], aes(x=`V2-A`, y=`B1-A`), subset="root") +
+  geom_hex(bins=256) +
+  labs(x="CD14", y="CD56") +
+  theme_mike() +
+  theme(strip.text=element_blank()) +
+  lims(x=c(0, 12), y=c(0, 12)) +
+  geom_gate(nkcell.gate) +
+  geom_gate(notnkcell.gate)
+
+ggsave(nk.p,
+       filename="~/Dropbox/Noise_FACS/Replication_cohorts/Milieu_Interieur/plot.dir/P5_nk_gate.png",
+       height=2.75, width=2.75, dpi=300)
+
+nk.p
+```
+
+
+```{r}
+# add the CD16 bright gate
+flowWorkspace::add(P5.notCD3.gs, nkcell.gate, parent="root")
+recompute(P5.notCD3.gs)
+
+flowWorkspace::add(P5.notCD3.gs, notnkcell.gate, parent="root")
+recompute(P5.notCD3.gs)
+```
+
+
+```{r}
+##########################################
+## Next set of parameter warping steps
+##########################################
+# Continue with non-T cell gating hieararchy
+
+notcd3.nodes <- getNodes(P5.notCD3.gs)[2:length(getNodes(P5.notCD3.gs))]
+flowset.list <- list()
+
+for(i in seq_along(notcd3.nodes)){
+  node <- notcd3.nodes[i]
+  flow.i <- getData(P5.notCD3.gs, y=node)
+  
+  # remove samples with < 50 events recorded
+  extract <- numeric(0)
+  for(x in seq_len(length(flow.i))){
+    events <- nrow(flow.i[[x]])
+    if(events < 50){
+      extract <- c(extract, x)
+    }
+  }
+  print(node)
+  flow.i_filt <- flow.i[seq(along=flow.i)]
+  
+  # first check that we aren't removing all of the samples
+  # then only remove the samples with insufficient cells for warping
+  if((length(flow.i_filt) > length(extract))){
+    if(length(extract)){flow.i_filt <- flow.i_filt[-(extract),]}
+    pars <- colnames(flow.i_filt)[c(8, 11, 14, 17, 20, 23, 26, 29)]
+    second.warp <- c("B3-A")
+    
+    P5.warping <- warpSet(flow.i_filt, stains=setdiff(pars, second.warp), bwFac=1.5)
+    P5.warping <- warpSet(P5.warping, stains=second.warp, peakNr=2, bwFac=1)
+
+    # densityplot(x=~`B3-A`,
+    #             data=P5.warping,
+    #             channel=c("V2-A"))
+    
+    flowset.list[[paste0("notCD3", node)]] <- P5.warping
+    samp.names <- sampleNames(P5.warping)
+    node.list <- list()
+    for(x in seq_along(samp.names)){
+      samp <- samp.names[x]
+      samp.flow <- P5.warping[[samp]]
+      samp.mat <- exprs(samp.flow)
+      if(nrow(samp.mat) > 1){
+        samp.mat <- samp.mat[, c("FSC-A", "SSC-A", "FSC-H", pars)]
+        cell.prefix <- paste(samp, gsub(paste0("notCD3", node), pattern="/", replacement="_"), sep=".")
+        cell.names <- paste(cell.prefix, paste0("Cell", 1:nrow(samp.mat)), sep=".")
+        rownames(samp.mat) <- cell.names
+        node.list[[samp]] <- samp.mat
+      } else if(nrow(samp.mat) < 1 & nrow(samp.mat) > 0){
+        samp.mat <- as.matrix(samp.mat[, c("FSC-A", "SSC-A", "FSC-H", pars)], ncol=length(pars))
+        cell.prefix <- paste(samp, gsub(paste0("notCD3", node), pattern="/", replacement="_"), sep=".")
+        cell.names <- paste(cell.prefix, paste0("Cell", 1:nrow(samp.mat)), sep=".")
+        rownames(samp.mat) <- cell.names
+        node.list[[samp]] <- samp.mat
+      }
+    }
+    samp.list[[paste0("notCD3", node)]] <- do.call(rbind.data.frame,
+                                                node.list)
+  }
+}
+
+# remove samples with < 1000 events recorded
+nkcell.flow <- flowset.list[["notCD3/NKcell"]]
+extract <- numeric(0)
+for(x in seq_len(length(nkcell.flow))){
+  events <- nrow(nkcell.flow[[x]])
+  if(events < 1000){
+    extract <- c(extract, x)
+  }
+}
+
+P5.nkcell.flow <- nkcell.flow[seq(along=nkcell.flow)]
+if(length(extract)){P5.nkcell.flow <- P5.nkcell.flow[-(extract),]}
+
+# remove samples with < 1000 events recorded
+notnk.flow <- flowset.list[["notCD3/notNKcell"]]
+extract <- numeric(0)
+for(x in seq_len(length(notnk.flow))){
+  events <- nrow(notnk.flow[[x]])
+  if(events < 1000){
+    extract <- c(extract, x)
+  }
+}
+
+P5.notnk.flow <- notnk.flow[seq(along=notnk.flow)]
+if(length(extract)){P5.notnk.flow <- P5.notnk.flow[-(extract),]}
+
+# instantiate a new GatingSet to continue the hierarchical gating for both partitions
+P5.nkcell.gs <- GatingSet(P5.nkcell.flow)
+P5.notnk.gs <- GatingSet(P5.notnk.flow)
+```
+
+
+```{r}
+# clear some memory
+rm(list=c("P5.notCD3.gs", "P5.nkcell.flow", "P5.notnk.flow"))
+gc()
+```
+
+
+```{r}
+###################################
+### NK cell gating hierarchy
+###################################
+
+## within NK cell subsets
+## CD16+CD56hi
+## CD16hiCD56+
+cd56.points <- c(7.5, 7.5, 10, 10, 9, 7.5)
+cd16.points <- c(6.5, 12, 12, 7.5, 7.0, 6.5)
+cd16bright.gate <- polygonGate(filterId="CD16hi", .gate=cbind("B3-A"=cd16.points, "B1-A"=cd56.points))
+
+## CD16+CD56hi
+cd56.points <- c(7.5, 7.5, 11, 11)
+cd16.points <- c(0, 6.5, 7.5, 0)
+cd56bright.gate <- polygonGate(filterId="CD56hi", .gate=cbind("B3-A"=cd16.points, "B1-A"=cd56.points))
+```
+
+
+```{r, fig.width=2.75, fig.height=2.75}
+nk.p <- ggcyto(P5.nkcell.flow[2], aes(x=`B3-A`, y=`B1-A`), subset="root") +
+  geom_hex(bins=256) +
+  labs(x="CD16", y="CD56") +
+  lims(x=c(0, 12), y=c(0, 12)) +
+  theme_mike() +
+  theme(strip.text=element_blank()) +
+  geom_gate(cd16bright.gate) +
+  geom_gate(cd56bright.gate) +
+  NULL
+
+ggsave(nk.p,
+       filename="~/Dropbox/Noise_FACS/Replication_cohorts/Milieu_Interieur/plot.dir/P5_NKcell_gate.png",
+       height=2.75, width=2.75, dpi=300)
+
+nk.p
+```
+
+
+```{r}
+# add the CD16 bright gate
+flowWorkspace::add(P5.nkcell.gs, cd16bright.gate, parent="root")
+recompute(P5.nkcell.gs)
+
+# add the CD16 bright gate
+flowWorkspace::add(P5.nkcell.gs, cd56bright.gate, parent="root")
+recompute(P5.nkcell.gs)
+
+##########################################
+## Next set of parameter warping steps
+##########################################
+# Extract the NK cell subsets
+nk.nodes <- getNodes(P5.nkcell.gs)[2:length(getNodes(P5.nkcell.gs))]
+
+for(i in seq_along(nk.nodes)){
+  node <- nk.nodes[i]
+  flow.i <- getData(P5.nkcell.gs, y=node)
+  
+  # remove samples with < 100 events recorded
+  extract <- numeric(0)
+  for(x in seq_len(length(flow.i))){
+    events <- nrow(flow.i[[x]])
+    if(events < 250){
+      extract <- c(extract, x)
+    }
+  }
+  print(node)
+  flow.i_filt <- flow.i[seq(along=flow.i)]
+  
+  # first check that we aren't removing all of the samples
+  # then only remove the samples with insufficient cells for warping
+  if((length(flow.i_filt) > length(extract))){
+    if(length(extract)){flow.i_filt <- flow.i_filt[-(extract),]}
+    pars <- colnames(flow.i_filt)[c(8, 11, 14, 17, 20, 23, 26, 29)]
+
+    P5.warping <- warpSet(flow.i_filt, stains=pars)
+    # densityplot(x=~`R2-A`,
+    #             data=P5.warping,
+    #             channel=c("V2-A"))
+    
+    samp.names <- sampleNames(P5.warping)
+    node.list <- list()
+    for(x in seq_along(samp.names)){
+      samp <- samp.names[x]
+      samp.flow <- P5.warping[[samp]]
+      samp.mat <- exprs(samp.flow)
+      if(nrow(samp.mat) > 1){
+        samp.mat <- samp.mat[, c("FSC-A", "SSC-A", "FSC-H", pars)]
+        cell.prefix <- paste(samp, gsub(paste0("NKcell", node), pattern="/", replacement="_"), sep=".")
+        cell.names <- paste(cell.prefix, paste0("Cell", 1:nrow(samp.mat)), sep=".")
+        rownames(samp.mat) <- cell.names
+        node.list[[samp]] <- samp.mat
+      } else if(nrow(samp.mat) < 1 & nrow(samp.mat) > 0){
+        samp.mat <- as.matrix(samp.mat[, c("FSC-A", "SSC-A", "FSC-H", pars)], ncol=length(pars))
+        cell.prefix <- paste(samp, gsub(paste0("NKcell", node), pattern="/", replacement="_"), sep=".")
+        cell.names <- paste(cell.prefix, paste0("Cell", 1:nrow(samp.mat)), sep=".")
+        rownames(samp.mat) <- cell.names
+        node.list[[samp]] <- samp.mat
+      }
+    }
+    samp.list[[paste0("NKcell", node)]] <- do.call(rbind.data.frame,
+                                                   node.list)
+  }
+}
+```
+
+
+```{r}
+##############################
+## monocytes and neutrophils #
+##############################
+# small-medium sized CD14+ monocytes
+cd16.points <- c(0, 2, 5, 7.5, 9, 10.5, 10.5, 10.5)
+ssc.points <- c(0, 1.5e5, 1.75e5, 1.75e5, 1.5e5, 1e5, 7.5e4, 0, 0)
+monocyte.gate <- polygonGate(filterId="Mono", .gate=cbind("SSC-A"=ssc.points, "B3-A"=cd16.points))
+
+# large CD14- granulocytes
+# small-medium sized CD14+ monocytes
+cd16.points <- c(10.5, 9, 9, 12, 12, 10.5)
+ssc.points <- c(1e5, 1.5e5, 2.5e5, 2.5e5, 1e5, 1e5)
+gran.gate <- polygonGate(filterId="Granulocyte", .gate=cbind("SSC-A"=ssc.points, "B3-A"=cd16.points))
+```
+
+
+```{r, fig.width=2.75, fig.height=2.75}
+gran.p <- ggcyto(P5.notnk.gs[2], aes(x=`SSC-A`, y=`B3-A`), subset="root") +
+  geom_hex(bins=256) +
+  labs(x="SSC-A", y="CD16") +
+  theme_mike() +
+  theme(strip.text=element_blank()) +
+  lims(x=c(0, 2.5e5), y=c(0, 12)) +
+  geom_gate(monocyte.gate) +
+  geom_gate(gran.gate)
+
+ggsave(gran.p,
+       filename="~/Dropbox/Noise_FACS/Replication_cohorts/Milieu_Interieur/plot.dir/P5_gran_gate.png",
+       height=2.75, width=2.75, dpi=300)
+
+gran.p
+```
+
+
+```{r}
+# add the monocyte & granulocyte gates
+flowWorkspace::add(P5.notnk.gs, monocyte.gate, parent="root")
+recompute(P5.notnk.gs)
+
+flowWorkspace::add(P5.notnk.gs, gran.gate, parent="root")
+recompute(P5.notnk.gs)
+
+##########################################
+## Next set of parameter warping steps
+##########################################
+#  Still need to warp between each hierarchical gating set
+pmn.nodes <- getNodes(P5.notnk.gs)[2:length(getNodes(P5.notnk.gs))]
+flowset.list <- list()
+
+for(i in seq_along(pmn.nodes)){
+  node <- pmn.nodes[i]
+  flow.i <- getData(P5.notnk.gs, y=node)
+  
+  # remove samples with < 1000 events recorded
+  extract <- numeric(0)
+  for(x in seq_len(length(flow.i))){
+    events <- nrow(flow.i[[x]])
+    if(events < 200){
+      extract <- c(extract, x)
+    }
+  }
+  print(node)
+  flow.i_filt <- flow.i[seq(along=flow.i)]
+  
+  # first check that we aren't removing all of the samples
+  # then only remove the samples with insufficient cells for warping
+  if((length(flow.i_filt) > length(extract))){
+    if(length(extract)){flow.i_filt <- flow.i_filt[-(extract),]}
+    pars <- colnames(flow.i_filt)[c(8, 11, 14, 17, 20, 23, 26, 29)]
+    second.warp <- c("B3-A")
+    P5.warping <- warpSet(flow.i_filt, stains=setdiff(pars, second.warp))
+    P5.warping <- warpSet(P5.warping, stains=second.warp, bwFac=1, peakNr=2)
+
+    flowset.list[[paste0("notNK", node)]] <- P5.warping
+    samp.names <- sampleNames(P5.warping)
+    node.list <- list()
+    for(x in seq_along(samp.names)){
+      samp <- samp.names[x]
+      samp.flow <- P5.warping[[samp]]
+      samp.mat <- exprs(samp.flow)
+      if(nrow(samp.mat) > 1){
+        samp.mat <- samp.mat[, c("FSC-A", "SSC-A", "FSC-H", pars)]
+        cell.prefix <- paste(samp, gsub(paste0("notNK", node), pattern="/", replacement="_"), sep=".")
+        cell.names <- paste(cell.prefix, paste0("Cell", 1:nrow(samp.mat)), sep=".")
+        rownames(samp.mat) <- cell.names
+        node.list[[samp]] <- samp.mat
+      } else if(nrow(samp.mat) < 1 & nrow(samp.mat) > 0){
+        samp.mat <- as.matrix(samp.mat[, c("FSC-A", "SSC-A", "FSC-H", pars)], ncol=length(pars))
+        cell.prefix <- paste(samp, gsub(paste0("notNK", node), pattern="/", replacement="_"), sep=".")
+        cell.names <- paste(cell.prefix, paste0("Cell", 1:nrow(samp.mat)), sep=".")
+        rownames(samp.mat) <- cell.names
+        node.list[[samp]] <- samp.mat
+      }
+    }
+    samp.list[[paste0("notNK", node)]] <- do.call(rbind.data.frame,
+                                                   node.list)
+  }
+}
+
+# remove samples with < 1000 events recorded
+mono.flow <- flowset.list[["notNK/Mono"]]
+extract <- numeric(0)
+for(x in seq_len(length(mono.flow))){
+  events <- nrow(mono.flow[[x]])
+  if(events < 1000){
+    extract <- c(extract, x)
+  }
+}
+# remove samples with < 1000 events recorded
+granulo.flow <- flowset.list[["notNK/Granulocyte"]]
+extract <- numeric(0)
+for(x in seq_len(length(granulo.flow))){
+  events <- nrow(granulo.flow[[x]])
+  if(events < 1000){
+    extract <- c(extract, x)
+  }
+}
+
+# instantiate a new GatingSet to continue the hierarchical gating for both partitions
+P5.mono.gs <- GatingSet(mono.flow)
+P5.granulo.gs <- GatingSet(granulo.flow)
+```
+
+
+```{r}
+#####################
+## Monocyte subsets #
+#####################
+# split by CD14/CD16 into classical and non-classical (CD16+)
+# classical CD14+CD16lo
+cd14.points <- c(8.5, 12, 12, 10, 8.5, 8.5)
+cd16.points <- c(0, 0, 8, 8, 5.5, 0)
+classical.gate <- polygonGate(filterId="ClassicMono", .gate=cbind("B3-A"=cd16.points, "V2-A"=cd14.points))
+
+# non-classical CD14loCD16+
+cd14.points <- c(4, 8, 8.5, 9, 9, 4, 4)
+cd16.points <- c(7.5, 7.5, 8, 10, 12, 12, 7.5)
+nonclassic.gate <- polygonGate(filterId="CD16Mono", .gate=cbind("B3-A"=cd16.points, "V2-A"=cd14.points))
+```
+
+
+```{r, fig.width=2.75, fig.height=2.75}
+monp.p <- ggcyto(P5.mono.gs[4], aes(x=`V2-A`, y=`B3-A`), subset="root") +
+  geom_hex(bins=256) +
+  labs(x="CD14", y="CD16") +
+  lims(x=c(0, 12), y=c(0, 12)) +
+  theme_mike() +
+  theme(strip.text=element_blank()) +
+  geom_gate(classical.gate) +
+  geom_gate(nonclassic.gate)
+
+ggsave(monp.p,
+       filename="~/Dropbox/Noise_FACS/Replication_cohorts/Milieu_Interieur/plot.dir/P5_mono_gate.png",
+       height=2.75, width=2.75, dpi=300)
+
+monp.p
+```
+
+
+```{r}
+flowWorkspace::add(P5.mono.gs, classical.gate, parent="root")
+recompute(P5.mono.gs)
+
+flowWorkspace::add(P5.mono.gs, nonclassic.gate, parent="root")
+recompute(P5.mono.gs)
+```
+
+
+```{r}
+## finally, neutrophils as large CD16+ non-monocytes 
+forward.points <- c(5e4, 2.5e5, 2.5e5, 5e4, 5e4)
+cd16.points <- c(9, 9, 12, 12, 9, 9)
+neutrophil.gate <- polygonGate(filterId="Neutrophil", .gate=cbind("B3-A"=cd16.points, "FSC-A"=forward.points))
+```
+
+
+```{r, fig.width=2.75, fig.height=2.75}
+neut.p <- ggcyto(P5.granulo.gs[4], aes(x=`FSC-A`, y=`B3-A`), subset="root") +
+  geom_hex(bins=256) +
+  labs(y="CD16", x="FSC-A") +
+  theme_mike() +
+  theme(strip.text=element_blank()) +
+  lims(x=c(0, 2.5e5), y=c(0, 12)) +
+  geom_gate(neutrophil.gate)
+
+ggsave(neut.p,
+       filename="~/Dropbox/Noise_FACS/Replication_cohorts/Milieu_Interieur/plot.dir/P5_neut_gate.png",
+       height=2.75, width=2.75, dpi=300)
+
+neut.p
+```
+
+
+```{r, fig.width=2.75, fig.height=2.75}
+flowWorkspace::add(P5.granulo.gs, neutrophil.gate, parent="root")
+recompute(P5.granulo.gs)
+
+# set background colour
+flowViz.par.set(list("panel.background"=list("col"='white'),
+                     "fontsize"=list("text"=14, "points"=12),
+                     "axis.text"=list("cex"=1),
+                     "strip.background"=list("col"='white'),
+                     "strip.shingle"=list("col"='black')),
+                reset=FALSE)
+
+png("~/Dropbox/Noise_FACS/Replication_cohorts/Milieu_Interieur/plot.dir/CD16-Neutrophils-density.png",
+    height=3.75, width=3.75, units="in", res=300)
+densityplot(x=~`B3-A`,
+            data=getData(P5.granulo.gs, "/Neutrophil"),
+            xlim=c(8, 13),
+            overlap=0.5,
+            col='black',
+            fill='grey80',
+            scales=list(y=list(draw=FALSE)),
+            strip=strip.custom(factor.levels=c("CD16")),
+            channel=c("B3-A"))
+dev.off()
+
+## check CD3 on Neutrophils
+densityplot(x=~`V1-A`,
+            data=getData(P5.granulo.gs, "/Neutrophil"),
+            xlim=c(0, 13),
+            overlap=0.5,
+            col='black',
+            fill='grey80',
+            scales=list(y=list(draw=FALSE)),
+            strip=strip.custom(factor.levels=c("CD3")),
+            channel=c("V1-A"))
+```
+
+
+## Panel 7
+
+```{r}
+source("~/Dropbox/R_sessions/GGMike/theme_mike.R")
+
+## MI flow cytometry processing
+############################
+### Panel 7 - PMN subsets ##
+############################
+print("Panel 7A")
+path.to.files <- "~/Dropbox/Noise_FACS/Replication_cohorts/Milieu_Interieur/fcs_files/"
+
+P7.flow.data <- read.flowSet(path=path.to.files,
+                             transformation=FALSE, pattern="P07")
+sample.ids <- unlist(lapply(strsplit(x=sampleNames(P7.flow.data), split="-", fixed=TRUE),
+                            FUN=function(X) paste(X[1], X[2], sep="_")))
+sampleNames(P7.flow.data) <- sample.ids
+
+# subset samples into group A
+P7.flow.data <- P7.flow.data[1:5]
+
+# remove samples with < 10000 events recorded
+extract <- numeric(0)
+for(x in seq_len(length(P7.flow.data))){
+  events <- nrow(P7.flow.data[[x]])
+  if(events < 10000){
+    extract <- c(extract, x)
+  }
+}
+
+P7.fs_filt <- P7.flow.data[seq(along=P7.flow.data)]
+if(length(extract)){P7.fs_filt <- P7.fs_filt[-(extract),]}
+
+# remove channels that aren't interesting
+param.desc <-  pData(parameters(P7.fs_filt[[1]]))[, "desc"]
+names(param.desc) <- colnames(P7.fs_filt[[1]])
+param.desc[is.na(param.desc)] <- names(param.desc)[is.na(param.desc)]
+param.meta <- do.call(cbind.data.frame,
+                      list("Param"=names(param.desc),
+                           "Marker"=param.desc))
+
+# transform the data
+biexpTrans <- biexponentialTransform()
+
+# transform each paramter
+transform1 <- transformList("V1-A", biexpTrans)
+transform2 <- transformList("V2-A", biexpTrans)
+transform3 <- transformList("B1-A", biexpTrans)
+transform4 <- transformList("B2-A", biexpTrans)
+transform5 <- transformList("B3-A", biexpTrans)
+transform6 <- transformList("B4-A", biexpTrans)
+transform7 <- transformList("R1-A", biexpTrans)
+transform8 <- transformList("R2-A", biexpTrans)
+# transformForwardH <- transformList("FSC-H", biexpTrans)
+# transformSideA <- transformList("SSC-A", biexpTrans)
+# transformForwardA <- transformList("FSC-A", biexpTrans)
+
+P7.fs_filt <- transform(P7.fs_filt, transform1)
+P7.fs_filt <- transform(P7.fs_filt, transform2)
+P7.fs_filt <- transform(P7.fs_filt, transform3)
+P7.fs_filt <- transform(P7.fs_filt, transform4)
+P7.fs_filt <- transform(P7.fs_filt, transform5)
+P7.fs_filt <- transform(P7.fs_filt, transform6)
+P7.fs_filt <- transform(P7.fs_filt, transform7)
+P7.fs_filt <- transform(P7.fs_filt, transform8)
+
+# gate on leukocytes from FSC and SSC
+# ggcyto(P7.fs_filt[1:6], aes(x=`FSC-H`, y=`FSC-W`)) +
+#   geom_hex(bins=128) +
+#   lims(x=c(0, 2.5e5), y=c(0, 2.5e5))
+
+# set up a singlets gate
+# setup forward and side scatter gates
+width.points <- c(1.5e5, 1.5e5, 2.2e5, 2.2e5, 1.5e5)
+height.points <- c(1e4, 2e5, 2e5, 1e4, 1e4)
+singlet.gate <- polygonGate(filterId="Singlet", .gate=cbind("FSC-H"=height.points, "FSC-W"=width.points))
+singlet.filter <- filter(P7.fs_filt, singlet.gate)
+singlet.gates <- lapply(singlet.filter, 
+                        function(res) filterDetails(res, "Singlet")$filter)
+```
+
+
+```{r, fig.height=2.75, fig.width=2.75}
+single.p <- ggcyto(P7.fs_filt[1], aes(x=`FSC-H`, y=`FSC-W`)) +
+  geom_hex(bins=128) +
+  lims(x=c(0, 2.5e5), y=c(0, 2.5e5)) +
+  theme_mike() +
+  theme(strip.text=element_blank()) +
+  labs(x="FSC-H", y="FSC-W") +
+  geom_gate(singlet.gate)
+
+ggsave(single.p,
+       filename="~/Dropbox/Noise_FACS/Replication_cohorts/Milieu_Interieur/plot.dir/P7_singlet_gate.png",
+       height=2.75, width=2.75, dpi=300)
+
+single.p
+```
+
+
+```{r}
+P7.singlet <- Subset(P7.fs_filt, singlet.gates)
+
+# forward and side scater gate
+area.points <- c(0, 0, 2.5e5, 2.5e5, 2.5e4, 0)
+height.points <- c(0, 2e4, 2.25e5, 1.5e5, 0, 0)
+ssc.gate <- polygonGate(filterId="SSC", .gate=cbind("SSC-A"=area.points, "SSC-H"=height.points))
+ssc.filter <- filter(P7.singlet, ssc.gate)
+ssc.gates <- lapply(ssc.filter, 
+                    function(res) filterDetails(res, "SSC")$filter)
+```
+
+
+```{r, fig.height=2.75, fig.width=2.75}
+ssc.p <- ggcyto(P7.singlet[1], aes(x=`SSC-H`, y=`SSC-A`)) +
+  geom_hex(bins=128) +
+  lims(x=c(0, 2.5e5), y=c(0, 2.5e5)) +
+  theme_mike() +
+  labs(x="SSC-H", y="SSC-A") +
+  theme(strip.text=element_blank()) +
+  geom_gate(ssc.gate)
+
+ggsave(ssc.p,
+       filename="~/Dropbox/Noise_FACS/Replication_cohorts/Milieu_Interieur/plot.dir/P7_SSC_gate.png",
+       height=2.75, width=2.75, dpi=300)
+
+ssc.p
+```
+
+
+```{r}
+P7.ssc <- Subset(P7.singlet, ssc.gates)
+
+# remove samples with < 10000 events recorded
+extract <- numeric(0)
+for(x in seq_len(length(P7.ssc))){
+  events <- nrow(P7.ssc[[x]])
+  if(events < 10000){
+    extract <- c(extract, x)
+  }
+}
+
+P7.fs_filt <- P7.ssc[seq(along=P7.ssc)]
+if(length(extract)){P7.fs_filt <- P7.fs_filt[-(extract),]}
+
+#################################################
+## need to align main parameters before gating ##
+#################################################
+### some parameters aren't being registered properly
+# might need to only select cells with values > 0
+
+# might need to split the parameters to get those with 2 peaks
+# properly aligned compare to those with shoulder peaks.
+# I need to warp some parameters separately to others
+pars <- colnames(P7.fs_filt)[c(8, 11, 14, 17, 20, 23, 26)]
+second.warp <- c("V2-A", "R1-A")
+third.warp <- c("R2-A")
+P7.warping <- warpSet(P7.fs_filt, stains=setdiff(pars, c(second.warp, third.warp)))
+P7.warping <- warpSet(P7.warping, stains=second.warp, bwFac=0.75, nbreaks=15)
+P7.warping <- warpSet(P7.warping, stains=third.warp, bwFac=2, nbreaks=20, peakNr=2)
+
+# densityplot(x=~`B3-A`,
+#             data=P7.warping,
+#             channel=c("R2-A"))
+```
+
+
+```{r}
+# set up gating scheme using a GatingSet object
+P7.gs <- GatingSet(P7.warping)
+```
+
+
+```{r}
+rm(list=c("P7.warping", "P7.flow.data", "P7.fs_filt",
+          "P7.singlet", "P7.ssc"))
+gc()
+```
+
+
+```{r}
+###############
+## Set up gates for PMNs
+##############
+# PMN defined by this panel
+# Neutrophils - CD16hiCDw125-
+# Eosinophils - SSChiCDw125+
+# Basophils - FCER1hiCDw125-
+
+######
+# Neutrophils
+######
+# Gate on the big CD16+ cells first
+cd16.points <- c(10, 10, 9.5, 9.25, 10, 12, 12, 10.5, 10)
+fsc.points <- c(7.5e4, 1e5, 1.25e5, 1.5e5, 2.5e5, 2.5e5, 7.5e4, 6e4, 7.5e4)
+cd16.gate <- polygonGate(filterId="CD16", .gate=cbind("B3-A"=cd16.points, "FSC-A"=fsc.points))
+
+cd16.points <- c(0, 0, 7, 7, 0)
+fsc.points <- c(2.5e4, 2.5e5, 2.5e5, 0, 0)
+notcd16.gate <- polygonGate(filterId="notCD16", .gate=cbind("B3-A"=cd16.points, "FSC-A"=fsc.points))
+
+flowWorkspace::add(P7.gs, cd16.gate, parent="root")
+recompute(P7.gs)
+
+flowWorkspace::add(P7.gs, notcd16.gate, parent="root")
+recompute(P7.gs)
+```
+
+
+```{r, fig.height=2.75, fig.width=2.75}
+cd16.p <- ggcyto(P7.gs[2], aes(y=`B3-A`, x=`FSC-A`), subset="root") +
+  geom_hex(bins=128) +
+  #labs(y="CD16", x="CD125") +
+  theme_mike() +
+  theme(strip.text=element_blank()) +
+  lims(x=c(0, 2.75e5), y=c(0, 12)) +
+  geom_gate(cd16.gate) +
+  geom_gate(notcd16.gate)
+
+ggsave(cd16.p,
+       filename="~/Dropbox/Noise_FACS/Replication_cohorts/Milieu_Interieur/plot.dir/P7_CD16_gate.png",
+       height=2.75, width=2.75, dpi=300)
+
+cd16.p
+```
+
+
+
+```{r}
+# extract each gate and re-warp them
+# might need to split the parameters to get those with 2 peaks
+# properly aligned compare to those with shoulder peaks.
+# I need to warp some parameters separately to others
+
+######################################################################################
+# need to loop over each terminal node, extract into a new flowSet and then warp them
+# its not possible to add new gates to the GatingSet with the re-warped values
+# so I'll extract the single-cell expression values on the fly as I define each gate
+# I need to be careful because `samp.list` keep hold of these through the entire script
+#####################################################################################
+all.nodes <- getNodes(P7.gs)[2:length(getNodes(P7.gs))]
+flowset.list <- list()
+
+## this contains all of the processed single-cell measurements
+samp.list <- list()
+
+for(i in seq_along(all.nodes)){
+  node <- all.nodes[i]
+  flow.i <- getData(P7.gs, y=node)
+  print(node)
+  
+  # remove samples with < 1000 events recorded
+  extract <- numeric(0)
+  for(x in seq_len(length(flow.i))){
+    events <- nrow(flow.i[[x]])
+    if(events < 10000){
+      extract <- c(extract, x)
+    }
+  }
+  
+  flow.i_filt <- flow.i[seq(along=flow.i)]
+  if(length(extract)){flow.i_filt <- flow.i_filt[-(extract),]}
+  
+  # R2-A is blank in this panel, V2-A is viability
+  # I need to set different warping parameters for CD16+ and CD16- gates
+  pars <- colnames(flow.i_filt)[c(8, 11, 14, 17, 20, 23, 26)]
+  if(node == "/CD16"){
+    # use a try-catch statement to try to catch and fix these persistent errors
+    P7.warping <- tryCatch({
+      second.warp <- c("B4-A")
+      print(paste("Warping parameters: ", setdiff(pars, second.warp), sep=" "))
+      warpSet(flow.i_filt, stains=setdiff(pars, second.warp), peakNr=1)
+    }, warning=function(war){
+      print(paste("MY_WARNING: ", war))
+      second.warp <- c("B4-A")
+      return(warpSet(flow.i_filt, stains=setdiff(pars, second.warp), peakNr=1))
+    }, error=function(err){
+      print(paste("MY_ERROR :", err))
+      # what should I do in the case of an error? try again?
+      second.warp <- c("B4-A", "R1-A")
+      P7.warping <- warpSet(flow.i_filt, stains=setdiff(pars, second.warp), peakNr=1)
+      return(P7.warping)
+    }, finally={
+      print(paste("Warping parameters: ", second.warp, sep=" "))
+    })
+    P7.warping <- warpSet(P7.warping, stains=second.warp, peakNr=2, bwFac=1)
+    
+  } else{
+    second.warp <- c("B4-A", "B1-A")
+    print(paste("Warping parameters: ", setdiff(pars, second.warp), sep=" "))
+    P7.warping <- warpSet(flow.i_filt, stains=setdiff(pars, second.warp), peakNr=1)
+    print(paste("Warping parameters: ", second.warp, sep=" "))
+    P7.warping <- warpSet(P7.warping, stains=second.warp, peakNr=2, bwFac=1)
+  }
+  
+  # densityplot(x=~`B1-A`,
+  #             data=P7.warping,
+  #             channel=c("B1-A"))
+  
+  # ggcyto(P7.warping, aes(y=`R1-A`, x=`B1-A`), subset="root") +
+  #   geom_hex(bins=128) +
+  #   labs(y="CD203c", x="FcERI") +
+  #   lims(x=c(0, 12), y=c(0, 12)) +
+  #   geom_gate(fcer.gate)
+  
+  flowset.list[[node]] <- P7.warping
+  
+  samp.names <- sampleNames(P7.warping)
+  node.list <- list()
+  for(x in seq_along(samp.names)){
+    samp <- samp.names[x]
+    samp.flow <- P7.warping[[samp]]
+    samp.mat <- exprs(samp.flow)
+    if(nrow(samp.mat) > 1){
+      samp.mat <- samp.mat[, c("FSC-A", "SSC-A", "FSC-H", pars)]
+      cell.prefix <- paste(samp, gsub(node, pattern="/", replacement="_"), sep=".")
+      cell.names <- paste(cell.prefix, paste0("Cell", 1:nrow(samp.mat)), sep=".")
+      rownames(samp.mat) <- cell.names
+      node.list[[samp]] <- samp.mat
+    } else if(nrow(samp.mat) < 1 & nrow(samp.mat) > 0){
+      samp.mat <- as.matrix(samp.mat[, c("FSC-A", "SSC-A", "FSC-H", pars)], ncol=length(pars))
+      cell.prefix <- paste(samp, gsub(node, pattern="/", replacement="_"), sep=".")
+      cell.names <- paste(cell.prefix, paste0("Cell", 1:nrow(samp.mat)), sep=".")
+      rownames(samp.mat) <- cell.names
+      node.list[[samp]] <- samp.mat
+    }
+  }
+  samp.list[[node]] <- do.call(rbind.data.frame,
+                               node.list)
+}
+
+# extract the flow frames
+# remove samples with < 1000 events recorded
+cd16.flow <- flowset.list[["/CD16"]]
+extract <- numeric(0)
+for(x in seq_len(length(cd16.flow))){
+  events <- nrow(cd16.flow[[x]])
+  if(events < 1000){
+    extract <- c(extract, x)
+  }
+}
+
+P7.cd16.flow <- cd16.flow[seq(along=cd16.flow)]
+if(length(extract)){P7.cd16.flow <- P7.cd16.flow[-(extract),]}
+
+# extract the flow frames
+# remove samples with < 1000 events recorded
+notcd16.flow <- flowset.list[["/notCD16"]]
+extract <- numeric(0)
+for(x in seq_len(length(notcd16.flow))){
+  events <- nrow(notcd16.flow[[x]])
+  if(events < 1000){
+    extract <- c(extract, x)
+  }
+}
+
+P7.notcd16.flow <- notcd16.flow[seq(along=notcd16.flow)]
+if(length(extract)){P7.notcd16.flow <- P7.notcd16.flow[-(extract),]}
+```
+
+
+```{r}
+# instantiate a new GatingSet to continue the hierarchical gating
+P7.cd16.gs <- GatingSet(P7.cd16.flow)
+P7.notcd16.gs <- GatingSet(P7.notcd16.flow)
+```
+
+
+```{r}
+##########################
+## Gate on neutrophils
+##########################
+# get the CDw125- (CD125) CD16+ neutrophils
+cd16.points <- c(9.5, 9.5, 12, 12, 9.5)
+cd125.points <- c(0, 7, 7, 0, 0)
+neut.gate <- polygonGate(filterId="Neutrophil", .gate=cbind("B3-A"=cd16.points, "B2-A"=cd125.points))
+```
+
+
+```{r, fig.height=2.75, fig.width=2.75}
+p.neut <- ggcyto(P7.cd16.gs[1], aes(y=`B3-A`, x=`B2-A`), subset="root") +
+  geom_hex(bins=128) +
+  labs(y="CD16", x="CD125") +
+  theme_mike() +
+  theme(strip.text=element_blank()) +
+  lims(x=c(0, 12), y=c(0, 12)) +
+  geom_gate(neut.gate)
+
+ggsave(p.neut,
+       filename="~/Dropbox/Noise_FACS/Replication_cohorts/Milieu_Interieur/plot.dir/P7_neutrophil_gate.png",
+       height=2.75, width=2.75, dpi=300)
+
+p.neut
+```
+
+
+```{r}
+flowWorkspace::add(P7.cd16.gs, neut.gate, parent="root")
+recompute(P7.cd16.gs)
+
+
+# set background colour
+flowViz.par.set(list("panel.background"=list("col"='white'),
+                     "fontsize"=list("text"=14, "points"=12),
+                     "axis.text"=list("cex"=1),
+                     "strip.background"=list("col"='white'),
+                     "strip.shingle"=list("col"='black')),
+                reset=FALSE)
+
+png("~/Dropbox/Noise_FACS/Replication_cohorts/Milieu_Interieur/plot.dir/CD32-Neutrophils-density.png",
+    height=3.75, width=3.75, units="in", res=300)
+densityplot(x=~`B4-A`,
+            data=getData(P7.cd16.gs, "/Neutrophil"),
+            xlim=c(5, 12),
+            overlap=0.5,
+            col='black',
+            fill='grey80',
+            scales=list(y=list(draw=FALSE)),
+            strip=strip.custom(factor.levels=c("CD32")),
+            channel=c("B4-A"))
+dev.off()
+
+# ## check CD3 on Neutrophils
+# densityplot(x=~`V1-A`,
+#             data=getData(P5.granulo.gs, "/Neutrophil"),
+#             xlim=c(0, 13),
+#             overlap=0.5,
+#             col='black',
+#             fill='grey80',
+#             scales=list(y=list(draw=FALSE)),
+#             strip=strip.custom(factor.levels=c("CD3")),
+#             channel=c("V1-A"))
+```
+
+```{r}
+########################################
+## Extract the neutrophils
+########################################
+neut.nodes <- getNodes(P7.cd16.gs)[2:length(getNodes(P7.cd16.gs))]
+
+for(i in seq_along(neut.nodes)){
+  node <- neut.nodes[i]
+  flow.i <- getData(P7.cd16.gs, y=node)
+  
+  # remove samples with < 1000 events recorded
+  extract <- numeric(0)
+  for(x in seq_len(length(flow.i))){
+    events <- nrow(flow.i[[x]])
+    if(events < 200){
+      extract <- c(extract, x)
+    }
+  }
+  
+  flow.i_filt <- flow.i[seq(along=flow.i)]
+  if(length(extract)){flow.i_filt <- flow.i_filt[-(extract),]}
+  
+  # R2-A is blank in this panel, V2-A is viability
+  pars <- colnames(flow.i_filt)[c(8, 11, 14, 17, 20, 23, 26)]
+  P7.warping <- tryCatch({
+    second.warp <- c("V1-A")
+    print(paste("Warping parameters: ", setdiff(pars, second.warp), sep=" "))
+    warpSet(flow.i_filt, stains=setdiff(pars, second.warp), peakNr=1, bwFac=1.5)
+  }, warning=function(war){
+    print(paste("MY_WARNING: ", war))
+    second.warp <- c("V1-A")
+    return(warpSet(flow.i_filt, stains=setdiff(pars, second.warp), peakNr=1, bwFac=1.5))
+  }, error=function(err){
+    print(paste("MY_ERROR :", err))
+    # what should I do in the case of an error? try again?
+    second.warp <- c("V1-A", "R1-A")
+    P7.warping <- warpSet(flow.i_filt, stains=setdiff(pars, second.warp), peakNr=1, bwFac=1.5)
+    return(P7.warping)
+  }, finally={
+    print(paste("Warping parameters: ", second.warp, sep=" "))
+  })
+  
+  P7.warping <- warpSet(P7.warping, stains=second.warp, bwFac=3, peakNr=1)
+  
+  # densityplot(x=~`V1-A`,
+  #             data=P7.warping,
+  #             channel=c("B1-A"))
+  
+  print(node)
+  
+  samp.names <- sampleNames(P7.warping)
+  node.list <- list()
+  for(x in seq_along(samp.names)){
+    samp <- samp.names[x]
+    samp.flow <- P7.warping[[samp]]
+    samp.mat <- exprs(samp.flow)
+    if(nrow(samp.mat) > 1){
+      samp.mat <- samp.mat[, c("FSC-A", "SSC-A", "FSC-H", pars)]
+      cell.prefix <- paste(samp, gsub(node, pattern="/", replacement="_"), sep=".")
+      cell.names <- paste(cell.prefix, paste0("Cell", 1:nrow(samp.mat)), sep=".")
+      rownames(samp.mat) <- cell.names
+      node.list[[samp]] <- samp.mat
+    } else if(nrow(samp.mat) < 1 & nrow(samp.mat) > 0){
+      samp.mat <- as.matrix(samp.mat[, c("FSC-A", "SSC-A", "FSC-H", pars)], ncol=length(pars))
+      cell.prefix <- paste(samp, gsub(node, pattern="/", replacement="_"), sep=".")
+      cell.names <- paste(cell.prefix, paste0("Cell", 1:nrow(samp.mat)), sep=".")
+      rownames(samp.mat) <- cell.names
+      node.list[[samp]] <- samp.mat
+    }
+  }
+  samp.list[[node]] <- do.call(rbind.data.frame,
+                               node.list)
+}
+```
+
+
+```{r}
+######
+# Eosinophils
+######
+# Gate on the big CD16+ cells first
+cd32.points <- c(7, 6.75, 6.75, 6.75, 8, 8.75, 9, 9, 9, 9, 9, 9, 9)
+cd125.points <- c(6, 7, 7.75, 8, 8, 7.75, 7.75, 7.75, 7.5, 7.25, 7, 6.75, 6.5)
+cd125.gate <- polygonGate(filterId="CD125", .gate=cbind("B4-A"=cd32.points, "B2-A"=cd125.points))
+```
+
+
+```{r, fig.height=2.75, fig.width=2.75}
+cd125.p <- ggcyto(P7.notcd16.gs[1], aes(y=`B4-A`, x=`B2-A`), subset="root") +
+  geom_hex(bins=128) +
+  labs(y="CD32", x="CD125") +
+  theme_mike() +
+  theme(strip.text=element_blank()) +
+  lims(x=c(0, 12), y=c(0, 12)) +
+  geom_gate(cd125.gate)
+
+ggsave(cd125.p,
+       filename="~/Dropbox/Noise_FACS/Replication_cohorts/Milieu_Interieur/plot.dir/P7_CD125_Gate.png",
+       height=2.75, width=2.75, dpi=300)
+
+cd125.p
+```
+
+
+```{r}
+flowWorkspace::add(P7.notcd16.gs, cd125.gate, parent="root")
+recompute(P7.notcd16.gs)
+
+# get the big granular eosinophils
+fsc.points <- c(5e4, 5e4, 2.5e5, 2.5e5, 5e4)
+ssc.points <- c(5e4, 2.5e5, 2.5e5, 5e4, 5e4)
+eosin.gate <- polygonGate(filterId="Eosinophil", .gate=cbind("FSC-A"=fsc.points, "SSC-A"=ssc.points))
+```
+
+
+```{r, fig.height=2.75, fig.width=2.75}
+p.eosin <- ggcyto(P7.notcd16.gs[1], aes(y=`SSC-A`, x=`FSC-A`), subset="CD125") +
+  geom_hex(bins=64) +
+  labs(y="SSC-A", x="FSC-A") +
+  theme_mike() +
+  theme(strip.text=element_blank()) +
+  lims(x=c(0, 2.5e5), y=c(0, 2.5e5)) +
+  geom_gate(eosin.gate)
+
+ggsave(p.eosin,
+       filename="~/Dropbox/Noise_FACS/Replication_cohorts/Milieu_Interieur/plot.dir/P7_Eosin_gate.png",
+       height=2.75, width=2.75, dpi=300)
+
+p.eosin
+```
+
+
+```{r}
+flowWorkspace::add(P7.notcd16.gs, eosin.gate, parent="CD125")
+recompute(P7.notcd16.gs)
+
+######
+# Basophils
+######
+# Gate on CD203+ FCER1+
+# The gating strictly only needs to be on FcER1, so a range gate is fine, and deals 
+# with the fact that the mean of the population shifts around alot
+# Once the population is defined, I can then warp _within_ it to get comparable fluorescence
+# fcer.points <- c(9.5, 12.5, 12.5, 9.5, 9.5)
+# cd203.points <- c(3, 3, 10, 10, 3)
+# fcer.gate <- polygonGate(filterId="FCER", .gate=cbind("B1-A"=fcer.points, "R1-A"=cd203.points))
+fcer.gate <- rangeGate(filterId="FCER", getData(P7.notcd16.gs)[1:5], stain="B1-A", alpha=0.25, refLine=5)
+```
+
+
+```{r, fig.height=2.75, fig.width=2.75}
+p.baso <- ggcyto(P7.notcd16.gs[1], aes(y=`R1-A`, x=`B1-A`), subset="root") +
+  geom_hex(bins=128) +
+  labs(y="CD203c", x="FcERI") +
+  theme_mike() +
+  theme(strip.text=element_blank()) +
+  lims(x=c(0, 12), y=c(0, 12)) +
+  geom_gate(fcer.gate)
+
+ggsave(p.baso,
+       filename="~/Dropbox/Noise_FACS/Replication_cohorts/Milieu_Interieur/plot.dir/P7_baso_gate.png",
+       height=2.75, width=2.75, dpi=300)
+
+p.baso
+```
+
+
+```{r}
+flowWorkspace::add(P7.notcd16.gs, fcer.gate, parent="root")
+recompute(P7.notcd16.gs)
+```
+
+
+```{r}
+########################################
+## Extract the FCER+ cells and re-warp
+########################################
+baso.nodes <- getNodes(P7.notcd16.gs)[3:length(getNodes(P7.notcd16.gs))]
+flowset.list <- list()
+
+for(i in seq_along(baso.nodes[grepl(baso.nodes, pattern="/FCER")])){
+  node <- baso.nodes[grepl(baso.nodes, pattern="/FCER")][i]
+  flow.i <- getData(P7.notcd16.gs, y=node)
+  
+  # remove samples with < 1000 events recorded
+  extract <- numeric(0)
+  for(x in seq_len(length(flow.i))){
+    events <- nrow(flow.i[[x]])
+    if(events < 250){
+      extract <- c(extract, x)
+    }
+  }
+  
+  flow.i_filt <- flow.i[seq(along=flow.i)]
+  if(length(extract)){flow.i_filt <- flow.i_filt[-(extract),]}
+  
+  # R2-A is blank in this panel, V2-A is viability
+  pars <- colnames(flow.i_filt)[c(8, 11, 14, 17, 20, 23, 26)]
+  P7.warping <- tryCatch({
+    second.warp <- c("B1-A")
+    print(paste("Warping parameters: ", setdiff(pars, second.warp), sep=" "))
+    warpSet(flow.i_filt, stains=setdiff(pars, second.warp))
+  }, warning=function(war){
+    print(paste("MY_WARNING: ", war))
+    second.warp <- c("B1-A")
+    return(warpSet(flow.i_filt, stains=setdiff(pars, second.warp)))
+  }, error=function(err){
+    print(paste("MY_ERROR :", err))
+    # what should I do in the case of an error? try again?
+    second.warp <- c("B1-A", "R1-A")
+    P7.warping <- warpSet(flow.i_filt, stains=setdiff(pars, second.warp))
+    return(P7.warping)
+  }, finally={
+    print(paste("Warping parameters: ", second.warp, sep=" "))
+  })
+  
+  P7.warping <- warpSet(flow.i_filt, stains=second.warp, bwFac=0.8, peakNr=2)
+  # densityplot(x=~`B1-A`,
+  #             data=P7.warping,
+  #             channel=c("B1-A"))
+  
+  flowset.list[[node]] <- P7.warping
+  print(node)
+  
+  samp.names <- sampleNames(P7.warping)
+  node.list <- list()
+  for(x in seq_along(samp.names)){
+    samp <- samp.names[x]
+    samp.flow <- P7.warping[[samp]]
+    samp.mat <- exprs(samp.flow)
+    if(nrow(samp.mat) > 1){
+      samp.mat <- samp.mat[, c("FSC-A", "SSC-A", "FSC-H", pars)]
+      cell.prefix <- paste(samp, gsub(node, pattern="/", replacement="_"), sep=".")
+      cell.names <- paste(cell.prefix, paste0("Cell", 1:nrow(samp.mat)), sep=".")
+      rownames(samp.mat) <- cell.names
+      node.list[[samp]] <- samp.mat
+    } else if(nrow(samp.mat) < 1 & nrow(samp.mat) > 0){
+      samp.mat <- as.matrix(samp.mat[, c("FSC-A", "SSC-A", "FSC-H", pars)], ncol=length(pars))
+      cell.prefix <- paste(samp, gsub(node, pattern="/", replacement="_"), sep=".")
+      cell.names <- paste(cell.prefix, paste0("Cell", 1:nrow(samp.mat)), sep=".")
+      rownames(samp.mat) <- cell.names
+      node.list[[samp]] <- samp.mat
+    }
+  }
+  samp.list[[node]] <- do.call(rbind.data.frame,
+                               node.list)
+}
+
+# extract the flow frames
+# remove samples with < 1000 events recorded
+cd16.baso <- flowset.list[["/FCER"]]
+extract <- numeric(0)
+for(x in seq_len(length(cd16.baso))){
+  events <- nrow(cd16.baso[[x]])
+  if(events < 1000){
+    extract <- c(extract, x)
+  }
+}
+
+P7.baso.flow <- cd16.baso[seq(along=cd16.baso)]
+if(length(extract)){P7.baso.flow <- P7.baso.flow[-(extract),]}
+
+P7.baso.gs <- GatingSet(P7.baso.flow)
+
+# Gate on CD203+ FCER1+
+fcer.points <- c(7, 7, 12, 12, 7)
+cd125.points <- c(2, 8, 8, 2, 2)
+baso.gate <- polygonGate(filterId="Basophil", .gate=cbind("B1-A"=fcer.points, "B2-A"=cd125.points))
+```
+
+
+```{r, fig.height=2.75, fig.width=2.75}
+p.bas.true <- ggcyto(P7.baso.gs[1], aes(y=`B2-A`, x=`B1-A`), subset="root") +
+  geom_hex(bins=128) +
+  labs(y="CD125", x="FcERI") +
+  theme_mike() +
+  theme(strip.text=element_blank()) +
+  lims(x=c(0, 12), y=c(0, 12)) +
+  geom_gate(baso.gate)
+
+ggsave(p.bas.true,
+       filename="~/Dropbox/Noise_FACS/Replication_cohorts/Milieu_Interieur/plot.dir/P7_TrueBaso.png",
+       height=2.75, width=2.75, dpi=300)
+
+p.bas.true
+```
+
+
+```{r}
+flowWorkspace::add(P7.baso.gs, baso.gate, parent="root")
+recompute(P7.baso.gs)
+
+```
+
+
+
+```{r}
+# flush all the files out before the next panel
+sink(file="/dev/null")
+rm(list=ls())
+gc()
+sink(file=NULL)
+```
+
+
+## Panel 8
+
+```{r}
+source("~/Dropbox/R_sessions/GGMike/theme_mike.R")
+## MI flow cytometry processing
+######################################
+### Panel 8 - dendritic cell  panel ##
+######################################
+print("Panel 8A")
+
+path.to.files <- "~/Dropbox/Noise_FACS/Replication_cohorts/Milieu_Interieur/fcs_files/"
+P8.flow.data <- read.flowSet(path=path.to.files,
+                             transformation=FALSE, pattern="P08")
+sample.ids <- unlist(lapply(strsplit(x=sampleNames(P8.flow.data), split="-", fixed=TRUE),
+                            FUN=function(X) paste(X[1], X[2], sep="_")))
+sampleNames(P8.flow.data) <- sample.ids
+
+# subset samples into group A
+P8.flow.data <- P8.flow.data[1:6]
+
+# remove samples with < 1000 events recorded
+extract <- numeric(0)
+for(x in seq_len(length(P8.flow.data))){
+  events <- nrow(P8.flow.data[[x]])
+  if(events < 10000){
+    extract <- c(extract, x)
+  }
+}
+
+P8.fs_filt <- P8.flow.data[seq(along=P8.flow.data)]
+if(length(extract)){P8.fs_filt <- P8.fs_filt[-(extract),]}
+
+# remove channels that aren't interesting
+param.desc <-  pData(parameters(P8.flow.data[[1]]))[, "desc"]
+names(param.desc) <- colnames(P8.flow.data[[1]])
+param.desc[is.na(param.desc)] <- names(param.desc)[is.na(param.desc)]
+param.meta <- do.call(cbind.data.frame,
+                      list("Param"=names(param.desc),
+                           "Marker"=param.desc))
+
+# transform the data
+biexpTrans <- biexponentialTransform()
+
+# transform each paramter
+transform1 <- transformList("V1-A", biexpTrans)
+transform2 <- transformList("V2-A", biexpTrans)
+transform3 <- transformList("B1-A", biexpTrans)
+transform4 <- transformList("B2-A", biexpTrans)
+transform5 <- transformList("B3-A", biexpTrans)
+transform6 <- transformList("B4-A", biexpTrans)
+transform7 <- transformList("R1-A", biexpTrans)
+transform8 <- transformList("R2-A", biexpTrans)
+# transformForwardH <- transformList("FSC-H", biexpTrans)
+# transformSideA <- transformList("SSC-A", biexpTrans)
+# transformForwardA <- transformList("FSC-A", biexpTrans)
+
+P8.fs_filt <- transform(P8.fs_filt, transform1)
+P8.fs_filt <- transform(P8.fs_filt, transform2)
+P8.fs_filt <- transform(P8.fs_filt, transform3)
+P8.fs_filt <- transform(P8.fs_filt, transform4)
+P8.fs_filt <- transform(P8.fs_filt, transform5)
+P8.fs_filt <- transform(P8.fs_filt, transform6)
+P8.fs_filt <- transform(P8.fs_filt, transform7)
+P8.fs_filt <- transform(P8.fs_filt, transform8)
+
+# set up a singlets gates
+# setup height and width forward scatter gates
+width.points <- c(1.5e5, 1.5e5, 2.2e5, 2.2e5, 1.5e5)
+height.points <- c(1e4, 2e5, 2e5, 1e4, 1e4)
+singlet.gate <- polygonGate(filterId="Singlet", .gate=cbind("FSC-H"=height.points, "FSC-W"=width.points))
+singlet.filter <- filter(P8.fs_filt, singlet.gate)
+singlet.gates <- lapply(singlet.filter, 
+                        function(res) filterDetails(res, "Singlet")$filter)
+
+P8.singlet <- Subset(P8.fs_filt, singlet.gates)
+```
+
+
+```{r, fig.height=2.75, fig.width=2.75}
+p.singlet <- ggcyto(P8.singlet[1], aes(x=`FSC-H`, y=`FSC-W`)) +
+  geom_hex(bins=128) +
+  labs(x="FSC-H", y="FSC-W") +
+   theme_mike() +
+  theme(strip.text=element_blank()) +
+  lims(x=c(0, 2.5e5), y=c(0, 2.5e5)) +
+  geom_gate(singlet.gates)
+
+ggsave(p.singlet,
+       filename="~/Dropbox/Noise_FACS/Replication_cohorts/Milieu_Interieur/plot.dir/P8_singlet_gate.png",
+       height=2.75, width=2.75, dpi=300)
+
+p.singlet
+```
+
+
+
+```{r}
+# set up a side scatter gate requries a covariance matrix
+# setup covariance gate
+area.points <- c(0, 0, 2.5e5, 2.5e5, 5e4, 0)
+height.points <- c(0, 1e4, 2e5, 1.5e5, 0, 0)
+ssc.gate <- polygonGate(filterId="SSC", .gate=cbind("SSC-H"=height.points, "SSC-A"=area.points))
+ssc.filter <- filter(P8.singlet, ssc.gate)
+ssc.gates <- lapply(ssc.filter, 
+                    function(res) filterDetails(res, "SSC")$filter)
+```
+
+
+```{r, fig.height=2.75, fig.width=2.75}
+ssc.p <- ggcyto(P8.singlet[1], aes(x=`SSC-H`, y=`SSC-A`)) +
+  geom_hex(bins=128) +
+  labs(x="SSC-H", y="SSC-A") +
+   theme_mike() +
+  theme(strip.text=element_blank()) +
+  lims(x=c(0, 2.5e5), y=c(0, 2.5e5)) +
+  geom_gate(ssc.gate)
+
+ggsave(ssc.p,
+       filename="~/Dropbox/Noise_FACS/Replication_cohorts/Milieu_Interieur/plot.dir/P8_SSC_gate.png",
+       height=2.75, width=2.75, dpi=300)
+
+ssc.p
+```
+
+
+```{r}
+P8.ssc <- Subset(P8.singlet, ssc.gate)
+
+#################################################
+## need to align main parameters before gating ##
+#################################################
+### some parameters aren't being registered properly
+# might need to only select cells with values > 0
+
+# might need to split the parameters to get those with 2 peaks
+# properly aligned compare to those with shoulder peaks.
+# I need to warp some parameters separately to others
+pars <- colnames(P8.ssc)[c(8, 11, 14, 17, 20, 23, 26, 29)]
+second.warp <- c("V1-A", "V2-A")
+third.warp <- c("B3-A")
+P8.warping <- warpSet(P8.ssc, stains=setdiff(pars, c(second.warp, third.warp)))
+P8.warping <- warpSet(P8.warping, stains=second.warp, bwFac = 1.1, nbreaks=20)
+P8.warping <- warpSet(P8.warping, stains=third.warp, bwFac = 1.75, nbreaks=20, peakNr=2)
+
+# densityplot(x=~`V1-A`,
+#             data=P8.warping,
+#             channel=c("B3-A"))
+```
+
+
+```{r}
+# set up gating scheme using a GatingSet object
+P8.gs <- GatingSet(P8.warping)
+```
+
+
+```{r}
+# remove cells from the dump+ channels and check viability
+live.gate <- rangeGate(x=P8.warping[1:5], filterId="Live", stain="V2-A",
+                       positive=FALSE, refLine=5)
+
+flowWorkspace::add(P8.gs, live.gate, parent="root")
+recompute(P8.gs)
+```
+
+
+```{r, fig.height=2.75, fig.width=2.75}
+p.live <- ggcyto(P8.gs[1], aes(x=`V2-A`), subset="root") +
+  geom_density() +
+  #geom_hex(bins=128) +
+  labs(x="Viability") +
+  theme_mike() +
+  theme(strip.text=element_blank()) +
+  lims(x=c(0, 12)) +
+  geom_gate(live.gate)
+
+ggsave(p.live,
+       filename="~/Dropbox/Noise_FACS/Replication_cohorts/Milieu_Interieur/plot.dir/P8_live_gate.png",
+       height=2.75, width=2.75, dpi=300)
+
+p.live
+```
+
+
+```{r}
+##################################
+# # gate on all CD14 and HLA-DR
+# monocytes
+cd14.points <- c(9.5, 12, 12, 9.5, 9.5)
+hla.points <- c(4, 4, 12, 12, 4)
+mono.gate <- polygonGate(filterId="Monocytes", .gate=cbind("V1-A"=cd14.points, "B3-A"=hla.points))
+
+# DCs
+cd14.points <- c(0, 6.5, 7.5, 8.5, 8.5, 0, 0)
+hla.points <- c(7, 7, 7.5, 9, 12, 12, 7.25)
+dc.gate <- polygonGate(filterId="DCs", .gate=cbind("V1-A"=cd14.points, "B3-A"=hla.points))
+```
+
+
+```{r, fig.height=2.75, fig.width=2.75}
+p.hla <- ggcyto(P8.gs[1], aes(x=`V1-A`, y=`B3-A`), subset="Live") +
+  geom_hex(bins=128) +
+  labs(x="CD14", y="HLA-DR") +
+  lims(x=c(0, 12), y=c(0, 12)) +
+  theme_mike() +
+  theme(strip.text=element_blank()) +
+  geom_gate(mono.gate) +
+  geom_gate(dc.gate)
+
+ggsave(p.hla,
+       filename="~/Dropbox/Noise_FACS/Replication_cohorts/Milieu_Interieur/plot.dir/P8_HLA_gate.png",
+       height=2.75, width=2.75, dpi=300)
+
+p.hla
+```
+
+
+```{r}
+# add the gates
+flowWorkspace::add(P8.gs, mono.gate, parent="Live")
+recompute(P8.gs)
+
+# add the gates
+flowWorkspace::add(P8.gs, dc.gate, parent="Live")
+recompute(P8.gs)
+```
+
+
+```{r}
+# extract each gate and re-warp them
+# might need to split the parameters to get those with 2 peaks
+# properly aligned compare to those with shoulder peaks.
+# I need to warp some parameters separately to others
+
+######################################################################################
+# need to loop over each terminal node, extract into a new flowSet and then warp them
+# its not possible to add new gates to the GatingSet with the re-warped values
+# so I'll extract the single-cell expression values on the fly as I define each gate
+# I need to be careful because `samp.list` keep hold of these through the entire script
+#####################################################################################
+mono.nodes <- getNodes(P8.gs)[3:length(getNodes(P8.gs))]
+flowset.list <- list()
+
+## this contains all of the processed single-cell measurements
+samp.list <- list()
+
+for(i in seq_along(mono.nodes)){
+  node <- mono.nodes[i]
+  flow.i <- getData(P8.gs, y=node)
+  
+  # remove samples with < 1000 events recorded
+  extract <- numeric(0)
+  for(x in seq_len(length(flow.i))){
+    events <- nrow(flow.i[[x]])
+    if(events < 1000){
+      extract <- c(extract, x)
+    }
+  }
+  
+  flow.i_filt <- flow.i[seq(along=flow.i)]
+  if(length(extract)){flow.i_filt <- flow.i_filt[-(extract),]}
+  
+  pars <- colnames(flow.i_filt)[c(8, 11, 14, 17, 20, 23, 26, 29)]
+  #second.warp <- c("V2-A")
+  P8.warping <- warpSet(flow.i_filt, stains=pars)
+  #P8.warping <- warpSet(P8.warping, stains=second.warp, peakNr=2, bwFac=1)
+  
+  flowset.list[[node]] <- P8.warping
+  print(node)
+  
+  samp.names <- sampleNames(P8.warping)
+  node.list <- list()
+  for(x in seq_along(samp.names)){
+    samp <- samp.names[x]
+    samp.flow <- P8.warping[[samp]]
+    samp.mat <- exprs(samp.flow)
+    if(nrow(samp.mat) > 1){
+      samp.mat <- samp.mat[, c("FSC-A", "SSC-A", "FSC-H", pars)]
+      cell.prefix <- paste(samp, gsub(node, pattern="/", replacement="_"), sep=".")
+      cell.names <- paste(cell.prefix, paste0("Cell", 1:nrow(samp.mat)), sep=".")
+      rownames(samp.mat) <- cell.names
+      node.list[[samp]] <- samp.mat
+    } else if(nrow(samp.mat) < 1 & nrow(samp.mat) > 0){
+      samp.mat <- as.matrix(samp.mat[, c("FSC-A", "SSC-A", "FSC-H", pars)], ncol=length(pars))
+      cell.prefix <- paste(samp, gsub(node, pattern="/", replacement="_"), sep=".")
+      cell.names <- paste(cell.prefix, paste0("Cell", 1:nrow(samp.mat)), sep=".")
+      rownames(samp.mat) <- cell.names
+      node.list[[samp]] <- samp.mat
+    }
+  }
+  samp.list[[node]] <- do.call(rbind.data.frame,
+                               node.list)
+}
+
+# remove samples with < 1000 events recorded
+dc.flow <- flowset.list[["/Live/DCs"]]
+extract <- numeric(0)
+for(x in seq_len(length(dc.flow))){
+  events <- nrow(dc.flow[[x]])
+  if(events < 1000){
+    extract <- c(extract, x)
+  }
+}
+
+P8.dc.flow <- dc.flow[seq(along=dc.flow)]
+if(length(extract)){P8.dc.flow <- P8.dc.flow[-(extract),]}
+```
+
+
+```{r}
+# instantiate a new GatingSet to continue the hierarchical gating
+P8.dc.gs <- GatingSet(P8.dc.flow)
+```
+
+
+```{r}
+##############################
+## Defining DC cell subsets ##
+##############################
+## DC subsets defined by this panel
+# pDC - BDCA2+BDCA4+-
+# cDC1 - BDCA1+BDCA3-
+# cDC3 - BDCA1-BDCA3+
+
+## plasmacytoid dendritic cells
+bdca2.points <- c(7.5, 11, 11, 7.5, 7.5)
+bdca4.points <- c(6, 6, 11, 11, 6)
+pdc.gate <- polygonGate(filterId="pDC", .gate=cbind("B2-A"=bdca2.points, "R1-A"=bdca4.points))
+
+## select non-pDCs
+bdca2.points <- c(0, 7, 7, 0, 0)
+bdca4.points <- c(0, 0, 7.5, 7.5, 0)
+notpdc.gate <- polygonGate(filterId="NotpDC", .gate=cbind("B2-A"=bdca2.points, "R1-A"=bdca4.points))
+```
+
+
+
+```{r, fig.height=2.75, fig.width=2.75}
+p.pdc <- ggcyto(P8.dc.gs[1], aes(x=`B2-A`, y=`R1-A`), subset="root") +
+  geom_hex(bins=128) +
+  labs(x="BDCA-2", y="BDCA-4") +
+  lims(x=c(0, 12), y=c(0, 12)) +
+  theme_mike() +
+  theme(strip.text=element_blank()) +
+  geom_gate(pdc.gate) +
+  geom_gate(notpdc.gate)
+
+ggsave(p.pdc,
+       filename="~/Dropbox/Noise_FACS/Replication_cohorts/Milieu_Interieur/plot.dir/P8_PDC_gate.png",
+       height=2.75, width=2.75, dpi=300)
+
+p.pdc
+```
+
+
+```{r}
+# add the gates
+flowWorkspace::add(P8.dc.gs, pdc.gate, parent="root")
+recompute(P8.dc.gs)
+
+flowWorkspace::add(P8.dc.gs, notpdc.gate, parent="root")
+recompute(P8.dc.gs)
+
+##############################################
+## Extract pDCs and continued with cDC gating
+##############################################
+dc.nodes <- getNodes(P8.dc.gs)[2:length(getNodes(P8.dc.gs))]
+flowset.list <- list()
+
+for(i in seq_along(dc.nodes)){
+  node <- dc.nodes[i]
+  flow.i <- getData(P8.dc.gs, y=node)
+  
+  # remove samples with < 500 events recorded
+  extract <- numeric(0)
+  for(x in seq_len(length(flow.i))){
+    events <- nrow(flow.i[[x]])
+    if(events < 200){
+      extract <- c(extract, x)
+    }
+  }
+  
+  flow.i_filt <- flow.i[seq(along=flow.i)]
+  if(length(extract)){flow.i_filt <- flow.i_filt[-(extract),]}
+  
+  pars <- colnames(flow.i_filt)[c(8, 11, 14, 17, 20, 23, 26, 29)]
+  #second.warp <- c("V2-A")
+  P8.warping <- warpSet(flow.i_filt, stains=pars)
+  #P8.warping <- warpSet(P8.warping, stains=second.warp, peakNr=2, bwFac=1)
+  
+  flowset.list[[node]] <- P8.warping
+  print(node)
+  
+  samp.names <- sampleNames(P8.warping)
+  node.list <- list()
+  for(x in seq_along(samp.names)){
+    samp <- samp.names[x]
+    samp.flow <- P8.warping[[samp]]
+    samp.mat <- exprs(samp.flow)
+    if(nrow(samp.mat) > 1){
+      samp.mat <- samp.mat[, c("FSC-A", "SSC-A", "FSC-H", pars)]
+      cell.prefix <- paste(samp, gsub(node, pattern="/", replacement="_"), sep=".")
+      cell.names <- paste(cell.prefix, paste0("Cell", 1:nrow(samp.mat)), sep=".")
+      rownames(samp.mat) <- cell.names
+      node.list[[samp]] <- samp.mat
+    } else if(nrow(samp.mat) < 1 & nrow(samp.mat) > 0){
+      samp.mat <- as.matrix(samp.mat[, c("FSC-A", "SSC-A", "FSC-H", pars)], ncol=length(pars))
+      cell.prefix <- paste(samp, gsub(node, pattern="/", replacement="_"), sep=".")
+      cell.names <- paste(cell.prefix, paste0("Cell", 1:nrow(samp.mat)), sep=".")
+      rownames(samp.mat) <- cell.names
+      node.list[[samp]] <- samp.mat
+    }
+  }
+  samp.list[[node]] <- do.call(rbind.data.frame,
+                               node.list)
+}
+
+# remove samples with < 1000 events recorded
+cdc.flow <- flowset.list[["/NotpDC"]]
+extract <- numeric(0)
+for(x in seq_len(length(cdc.flow))){
+  events <- nrow(cdc.flow[[x]])
+  if(events < 1000){
+    extract <- c(extract, x)
+  }
+}
+
+P8.cdc.flow <- cdc.flow[seq(along=cdc.flow)]
+if(length(extract)){P8.cdc.flow <- P8.cdc.flow[-(extract),]}
+
+# instantiate a new GatingSet to continue the hierarchical gating
+P8.cdc.gs <- GatingSet(P8.cdc.flow)
+```
+
+
+```{r}
+###############################
+## cDC subsets
+# cDC3
+bdca1.points <- c(4.5, 7.5, 7.5, 4.5, 4.5)
+bdca3.points <- c(7.75, 7.75, 11, 11, 7.75)
+cdc3.gate <- polygonGate(filterId="cDC3", .gate=cbind("B1-A"=bdca1.points, "R2-A"=bdca3.points))
+
+# cDC1
+bdca1.points <- c(7.5, 12.5, 12.5, 7.5, 7.5)
+bdca3.points <- c(0, 0, 7.5, 7.5, 0)
+cdc1.gate <- polygonGate(filterId="cDC1", .gate=cbind("B1-A"=bdca1.points, "R2-A"=bdca3.points))
+```
+
+
+```{r, fig.height=2.75, fig.width=2.75}
+cdc.p <- ggcyto(P8.cdc.gs[1], aes(x=`B1-A`, y=`R2-A`), subset="root") +
+  geom_hex(bins=128) +
+  labs(x="BDCA-1", y="BDCA-3") +
+  lims(x=c(0, 12), y=c(0, 12)) +
+  theme_mike() +
+  theme(strip.text=element_blank()) +
+  geom_gate(cdc3.gate) +
+  geom_gate(cdc1.gate)
+
+ggsave(cdc.p,
+       filename="~/Dropbox/Noise_FACS/Replication_cohorts/Milieu_Interieur/plot.dir/P8_cDC_gate.png",
+       height=2.75, width=2.75, dpi=300)
+
+cdc.p
+```
+
+
+```{r}
+flowWorkspace::add(P8.cdc.gs, cdc3.gate, parent="root")
+recompute(P8.cdc.gs)
+
+flowWorkspace::add(P8.cdc.gs, cdc1.gate, parent="root")
+recompute(P8.cdc.gs)
+```
+
+
+```{r}
+# flush all the files out before the next panel
+sink(file="/dev/null")
+rm(list=ls())
+gc()
+sink(file=NULL)
+```
+
+
+## Panel 9
+
+```{r}
+source("~/Dropbox/R_sessions/GGMike/theme_mike.R")
+
+print("Panel 9A")
+path.to.files <- "~/Dropbox/Noise_FACS/Replication_cohorts/Milieu_Interieur/fcs_files/"
+P9.flow.data <- read.flowSet(path=path.to.files,
+                             transformation=FALSE, pattern="P09")
+sample.ids <- unlist(lapply(strsplit(x=sampleNames(P9.flow.data), split="-", fixed=TRUE),
+                            FUN=function(X) paste(X[1], X[2], sep="_")))
+sampleNames(P9.flow.data) <- sample.ids
+
+P9.flow.data <- P9.flow.data[1:6]
+
+# remove samples with < 1000 events recorded
+extract <- numeric(0)
+for(x in seq_len(length(P9.flow.data))){
+  events <- nrow(P9.flow.data[[x]])
+  if(events < 10000){
+    extract <- c(extract, x)
+  }
+}
+
+P9.fs_filt <- P9.flow.data[seq(along=P9.flow.data)]
+if(length(extract)){P9.fs_filt <- P9.fs_filt[-(extract),]}
+
+## subset P9.fs_filt for testing
+#P9.fs_filt <- P9.fs_filt[1:20]
+
+# remove channels that aren't interesting
+param.desc <-  pData(parameters(P9.flow.data[[1]]))[, "desc"]
+names(param.desc) <- colnames(P9.flow.data[[1]])
+param.desc[is.na(param.desc)] <- names(param.desc)[is.na(param.desc)]
+param.meta <- do.call(cbind.data.frame,
+                      list("Param"=names(param.desc),
+                           "Marker"=param.desc))
+
+# transform the data
+biexpTrans <- biexponentialTransform()
+
+# transform each paramter
+transform1 <- transformList("V1-A", biexpTrans)
+transform2 <- transformList("V2-A", biexpTrans)
+transform3 <- transformList("B1-A", biexpTrans)
+transform4 <- transformList("B2-A", biexpTrans)
+transform5 <- transformList("B3-A", biexpTrans)
+transform6 <- transformList("B4-A", biexpTrans)
+transform7 <- transformList("R1-A", biexpTrans)
+transform8 <- transformList("R2-A", biexpTrans)
+# transformForwardH <- transformList("FSC-H", biexpTrans)
+# transformSideA <- transformList("SSC-A", biexpTrans)
+# transformForwardA <- transformList("FSC-A", biexpTrans)
+
+P9.fs_filt <- transform(P9.fs_filt, transform1)
+P9.fs_filt <- transform(P9.fs_filt, transform2)
+P9.fs_filt <- transform(P9.fs_filt, transform3)
+P9.fs_filt <- transform(P9.fs_filt, transform4)
+P9.fs_filt <- transform(P9.fs_filt, transform5)
+P9.fs_filt <- transform(P9.fs_filt, transform6)
+P9.fs_filt <- transform(P9.fs_filt, transform7)
+P9.fs_filt <- transform(P9.fs_filt, transform8)
+
+extract <- numeric(0)
+for(x in seq_len(length(P9.fs_filt))){
+  events <- nrow(P9.fs_filt[[x]])
+  if(events < 10000){
+    extract <- c(extract, x)
+  }
+}
+
+if(length(extract)){P9.fs_filt <- P9.fs_filt[-(extract),]}
+#################################################
+## need to align main parameters before gating ##
+#################################################
+### some parameters aren't being registered properly
+# might need to only select cells with values > 0
+
+# might need to split the parameters to get those with 2 peaks
+# properly aligned compare to those with shoulder peaks.
+# I need to warp some parameters separately to others
+pars <- colnames(P9.fs_filt)[c(8, 11, 14, 17, 20, 23, 26, 29)]
+second.warp <- c("B2-A")
+third.warp <- c("B1-A")
+P9.warping <- warpSet(P9.fs_filt, stains=setdiff(pars, c(second.warp, third.warp)))
+P9.warping <- warpSet(P9.warping, stains=second.warp, peakNr=2, bwFac = 0.75, nbreaks=20)
+P9.warping <- warpSet(P9.warping, stains=third.warp, bwFac = 2.5, nbreaks=20, peakNr=1)
+
+# densityplot(x=~`B2-A`,
+#             data=P9.warping,
+#             channel=c("B2-A"))
+```
+
+
+```{r}
+# set up gating scheme using a GatingSet object
+P9.gs <- GatingSet(P9.warping)
+```
+
+
+```{r}
+# set up gates to select gamma-delta TCR + and - cells
+# setup side scatter and CD3 gates
+side.points <- c(0, 0, 1.0e5, 1.0e5, 0)
+tcrgd.points <- c(2.5, 6, 6, 2.5, 2.5)
+
+gdtneg.gate <- polygonGate(filterId="gdTneg", .gate=cbind("SSC-A"=side.points, "B2-A"=tcrgd.points))
+
+# set up a CD3 gate
+# setup side scatter and CD3 gates
+side.points <- c(0, 0, 1.0e5, 1.0e5, 0)
+tcrgd.points <- c(6.5, 11, 11, 6.5, 6.5)
+
+gdtpos.gate <- polygonGate(filterId="gdT", .gate=cbind("SSC-A"=side.points, "B2-A"=tcrgd.points))
+```
+
+
+
+```{r, fig.width=2.75, fig.height=2.75}
+# # gate on TCRgd- cells
+gdt.p <- ggcyto(P9.fs_filt[1], aes(x=`B2-A`, y=`SSC-A`)) +
+  geom_hex(bins=128) +
+  theme_mike() +
+  theme(strip.text=element_blank()) +
+  lims(x=c(0, 12), y=c(0, 2.7e5)) +
+  #labs(x="", y="") +
+  geom_gate(gdtneg.gate) +
+  geom_gate(gdtpos.gate)
+
+ggsave(gdt.p,
+       filename="~/Dropbox/Noise_FACS/Replication_cohorts/Milieu_Interieur/plot.dir/P9_gdT_gate.png",
+       height=2.75, width=2.75, dpi=300)
+
+gdt.p
+```
+
+
+
+```{r}
+flowWorkspace::add(P9.gs, gdtneg.gate, parent="root")
+recompute(P9.gs)
+
+flowWorkspace::add(P9.gs, gdtpos.gate, parent="root")
+recompute(P9.gs)
+
+# set up a singlets gate
+# setup forward and side scatter gates
+width.points <- c(1.5e5, 1.5e5, 2.2e5, 2.2e5, 1.5e5)
+height.points <- c(1e4, 2e5, 2e5, 1e4, 1e4)
+singlet.gate <- polygonGate(filterId="Singlet", .gate=cbind("FSC-H"=height.points, "FSC-W"=width.points))
+```
+
+
+```{r, fig.width=2.75, fig.height=2.75}
+# # gate on singlets
+singlet.p <- ggcyto(P9.gs[1], aes(x=`FSC-H`, y=`FSC-W`), subset="gdTneg") +
+  geom_hex(bins=128) +
+  theme_mike() +
+  labs(x="FSC-H", y="FSC-W") +
+  theme(strip.text=element_blank()) +
+  lims(x=c(0, 3e5), y=c(0, 3e5)) +
+  geom_gate(singlet.gate)
+  
+ggsave(singlet.p,
+       filename="~/Dropbox/Noise_FACS/Replication_cohorts/Milieu_Interieur/plot.dir/P9_singlet_gate.png",
+       height=2.75, width=2.75, dpi=300)
+
+singlet.p
+```
+
+
+```{r}
+flowWorkspace::add(P9.gs, singlet.gate, parent="gdT")
+recompute(P9.gs)
+
+flowWorkspace::add(P9.gs, singlet.gate, parent="gdTneg")
+recompute(P9.gs)
+
+# # gate on side scatter
+# set up a side scatter gate requries a covariance matrix
+# setup covariance gate
+ssc.cov <- matrix(c(2e9, 1e6, 1.5e9, 1e10), ncol=2,
+                  dimnames=list(c("SSC-H", "SSC-A"), c("SSC-H", "SSC-A")))
+ssc.mean <- c("SSC-H"=2e4, "SSC-A"=2.5e4)
+ssc.ellipsoid <- ellipsoidGate(filterId="SSC.Ellipse", .gate=ssc.cov, mean=ssc.mean)
+```
+
+
+```{r, fig.width=2.75, fig.height=2.75}
+p.ssc <- ggcyto(P9.gs[1], aes(x=`SSC-H`, y=`SSC-A`), subset="/gdT/Singlet") +
+  geom_hex(bins=128) +
+  theme_mike() +
+  labs(x="SSC-H", y="SSC-A") +
+  theme(strip.text=element_blank()) +
+  lims(x=c(0, 2.5e5), y=c(0, 2.5e5)) +
+  geom_gate(ssc.ellipsoid)
+
+ggsave(p.ssc,
+       filename="~/Dropbox/Noise_FACS/Replication_cohorts/Milieu_Interieur/plot.dir/P9_SSC_gate.png",
+       height=2.75, width=2.75, dpi=300)
+
+p.ssc
+```
+
+
+```{r}
+flowWorkspace::add(P9.gs, ssc.ellipsoid, parent="/gdT/Singlet")
+recompute(P9.gs)
+
+flowWorkspace::add(P9.gs, ssc.ellipsoid, parent="/gdTneg/Singlet")
+recompute(P9.gs)
+```
+
+
+```{r}
+#######################################
+# Do I need to do a second warping at this point?
+# normalisation of these data tends to be quite specific to the parameters
+
+# extract each gate and re-warp them
+# might need to split the parameters to get those with 2 peaks
+# properly aligned compare to those with shoulder peaks.
+# I need to warp some parameters separately to others
+
+######################################################################################
+# need to loop over each terminal node, extract into a new flowSet and then warp them
+# its not possible to add new gates to the GatingSet with the re-warped values
+# so I'll extract the single-cell expression values on the fly as I define each gate
+# I need to be careful because `samp.list` keep hold of these through the entire script
+#####################################################################################
+all.nodes <- getNodes(P9.gs)[6:length(getNodes(P9.gs))]
+flowset.list <- list()
+
+## this contains all of the processed single-cell measurements
+samp.list <- list()
+
+for(i in seq_along(all.nodes)){
+  node <- all.nodes[i]
+  flow.i <- getData(P9.gs, y=node)
+  
+  # remove samples with < 1000 events recorded
+  extract <- numeric(0)
+  for(x in seq_len(length(flow.i))){
+    events <- nrow(flow.i[[x]])
+    if(events < 10000){
+      extract <- c(extract, x)
+    }
+  }
+  
+  flow.i_filt <- flow.i[seq(along=flow.i)]
+  if(length(extract) < length(flow.i_filt)){
+    if(length(extract)){flow.i_filt <- flow.i_filt[-(extract),]}
+    
+    pars <- colnames(flow.i_filt)[c(8, 11, 14, 17, 20, 23, 26, 29)]
+    second.warp <- c("R2-A")
+    third.warp <- c("B4-A")
+    P9.warping <- warpSet(flow.i_filt, stains=setdiff(pars, c(second.warp, third.warp)), bwFac=1.5)
+    P9.warping <- warpSet(P9.warping, stains=second.warp, peakNr=2, bwFac=1)
+    P9.warping <- warpSet(P9.warping, stains=third.warp, peakNr=2, bwFac=5)
+    
+    # densityplot(x=~`B4-A`,
+    #             data=P9.warping,
+    #             channel=c("B4-A"))
+    
+    flowset.list[[node]] <- P9.warping
+    print(node)
+    
+    samp.names <- sampleNames(P9.warping)
+    node.list <- list()
+    for(x in seq_along(samp.names)){
+      samp <- samp.names[x]
+      samp.flow <- P9.warping[[samp]]
+      samp.mat <- exprs(samp.flow)
+      if(nrow(samp.mat) > 1){
+        samp.mat <- samp.mat[, c("FSC-A", "SSC-A", "FSC-H", pars)]
+        cell.prefix <- paste(samp, gsub(node, pattern="/", replacement="_"), sep=".")
+        cell.names <- paste(cell.prefix, paste0("Cell", 1:nrow(samp.mat)), sep=".")
+        rownames(samp.mat) <- cell.names
+        node.list[[samp]] <- samp.mat
+      } else if(nrow(samp.mat) < 1 & nrow(samp.mat) > 0){
+        samp.mat <- as.matrix(samp.mat[, c("FSC-A", "SSC-A", "FSC-H", pars)], ncol=length(pars))
+        cell.prefix <- paste(samp, gsub(node, pattern="/", replacement="_"), sep=".")
+        cell.names <- paste(cell.prefix, paste0("Cell", 1:nrow(samp.mat)), sep=".")
+        rownames(samp.mat) <- cell.names
+        node.list[[samp]] <- samp.mat
+      }
+    }
+    samp.list[[node]] <- do.call(rbind.data.frame,
+                                 node.list) 
+    
+  }
+}
+
+# remove samples with < 1000 events recorded
+abtcell.flow <- flowset.list[["/gdTneg/Singlet/SSC.Ellipse"]]
+extract <- numeric(0)
+for(x in seq_len(length(abtcell.flow))){
+  events <- nrow(abtcell.flow[[x]])
+  if(events < 1000){
+    extract <- c(extract, x)
+  }
+}
+
+P9.abtcell.flow <- abtcell.flow[seq(along=abtcell.flow)]
+if(length(extract)){P9.abtcell.flow <- P9.abtcell.flow[-(extract),]}
+
+# instantiate a new GatingSet to continue the hierarchical gating
+P9.abtcell.gs <- GatingSet(P9.abtcell.flow)
+```
+
+
+```{r}
+############################################
+# First the CD3+ alpha-beta T cell subsets #
+############################################
+# might need 4 different gates to get the two SP populations, then the DP and DN cells
+cd8.points <- c(8, 12, 12, 8, 8)
+cd4.points <- c(0, 0, 7.5, 7.5, 0)
+cd8.gate <- polygonGate(filterId="CD8", .gate=cbind("B4-A"=cd8.points, "R2-A"=cd4.points))
+
+# might need 4 different gates to get the two SP populations, then the DP and DN cells
+cd8.points <- c(8, 8, 0, 0, 8)
+cd4.points <- c(7.95, 11, 11, 7.95, 7.95)
+cd4.gate <- polygonGate(filterId="CD4", .gate=cbind("B4-A"=cd8.points, "R2-A"=cd4.points))
+
+# might need 4 different gates to get the two SP populations, then the DP and DN cells
+cd8.points <- c(0, 7.5, 7.5, 0, 0)
+cd4.points <- c(0, 0, 6.5, 6.5, 0)
+DN.gate <- polygonGate(filterId="DN", .gate=cbind("B4-A"=cd8.points, "R2-A"=cd4.points))
+
+# might need 4 different gates to get the two SP populations, then the DP and DN cells
+cd8.points <- c(8, 12, 12, 8, 8)
+cd4.points <- c(7.75, 7.75, 11, 11, 7.75)
+DP.gate <- polygonGate(filterId="DP", .gate=cbind("B4-A"=cd8.points, "R2-A"=cd4.points))
+```
+
+
+```{r, fig.width=2.75, fig.height=2.75}
+# plot CD4 Vs CD8 to get major T cell subsets
+tcell.p <- ggcyto(P9.abtcell.gs[1], aes(x=`R2-A`, y=`B4-A`), subset="root") +
+  geom_hex(bins=256) +
+  labs(x="CD4", y="CD8") +
+  lims(x=c(0, 12), y=c(0, 12)) +
+  theme_mike() +
+  theme(strip.text=element_blank()) +
+  geom_gate(cd8.gate) +
+  geom_gate(cd4.gate) +
+  geom_gate(DN.gate) +
+  geom_gate(DP.gate)
+
+ggsave(tcell.p,
+     filename="~/Dropbox/Noise_FACS/Replication_cohorts/Milieu_Interieur/plot.dir/P9_Tcell_gate.png",
+     height=2.75, width=2.75, dpi=300)
+
+tcell.p
+```
+
+
+```{r}
+# add the T cell gates
+flowWorkspace::add(P9.abtcell.gs, cd4.gate, parent="root")
+recompute(P9.abtcell.gs)
+
+flowWorkspace::add(P9.abtcell.gs, cd8.gate, parent="root")
+recompute(P9.abtcell.gs)
+
+flowWorkspace::add(P9.abtcell.gs, DN.gate, parent="root")
+recompute(P9.abtcell.gs)
+
+flowWorkspace::add(P9.abtcell.gs, DP.gate, parent="root")
+recompute(P9.abtcell.gs)
+```
+
+
+```{r}
+###########################################################
+## Extract each T cell gate then continue with Th subsets
+###########################################################
+tcell.nodes <- getNodes(P9.abtcell.gs)[2:length(getNodes(P9.abtcell.gs))]
+flowset.list <- list()
+
+for(i in seq_along(tcell.nodes)){
+  node <- tcell.nodes[i]
+  flow.i <- getData(P9.abtcell.gs, y=node)
+  
+  # remove samples with < 1000 events recorded
+  extract <- numeric(0)
+  for(x in seq_len(length(flow.i))){
+    events <- nrow(flow.i[[x]])
+    if(events < 500){
+      extract <- c(extract, x)
+    }
+  }
+  
+  flow.i_filt <- flow.i[seq(along=flow.i)]
+  if(length(extract) < length(flow.i_filt)){
+    if(length(extract)){flow.i_filt <- flow.i_filt[-(extract),]}
+    
+    pars <- colnames(flow.i_filt)[c(8, 11, 14, 17, 20, 23, 26, 29)]
+    P9.warping <- tryCatch({
+      second.warp <- c()
+      print(paste("Warping parameters: ", setdiff(pars, second.warp), sep=" "))
+      warpSet(flow.i_filt, stains=setdiff(pars, second.warp))
+    }, warning=function(war){
+      print(paste("MY_WARNING: ", war))
+      second.warp <- c()
+      return(warpSet(flow.i_filt, stains=setdiff(pars, second.warp)))
+    }, error=function(err){
+      print(paste("MY_ERROR :", err))
+      # what should I do in the case of an error? try again?
+      second.warp <- c("V1-A")
+      P9.warping <- warpSet(flow.i_filt, stains=setdiff(pars, second.warp))
+      return(P9.warping)
+    }, finally={
+      print(paste("Warping parameters: ", second.warp, sep=" "))
+    })
+    # second.warp <- c("R2-A")
+    # third.warp <- c("B4-A")
+    if(length(second.warp) > 0){
+      P9.warping <- warpSet(P9.warping, stains=second.warp, bwFac=1)
+    }
+    # P9.warping <- warpSet(P9.warping, stains=third.warp, peakNr=3, bwFac=5, nbreaks=25)
+    
+    # densityplot(x=~`B4-A`,
+    #             data=P9.warping,
+    #             channel=c("B4-A"))
+    
+    flowset.list[[node]] <- P9.warping
+    print(node)
+    
+    samp.names <- sampleNames(P9.warping)
+    node.list <- list()
+    for(x in seq_along(samp.names)){
+      samp <- samp.names[x]
+      samp.flow <- P9.warping[[samp]]
+      samp.mat <- exprs(samp.flow)
+      if(nrow(samp.mat) > 1){
+        samp.mat <- samp.mat[, c("FSC-A", "SSC-A", "FSC-H", pars)]
+        cell.prefix <- paste(samp, gsub(node, pattern="/", replacement="_"), sep=".")
+        cell.names <- paste(cell.prefix, paste0("Cell", 1:nrow(samp.mat)), sep=".")
+        rownames(samp.mat) <- cell.names
+        node.list[[samp]] <- samp.mat
+      } else if(nrow(samp.mat) < 1 & nrow(samp.mat) > 0){
+        samp.mat <- as.matrix(samp.mat[, c("FSC-A", "SSC-A", "FSC-H", pars)], ncol=length(pars))
+        cell.prefix <- paste(samp, gsub(node, pattern="/", replacement="_"), sep=".")
+        cell.names <- paste(cell.prefix, paste0("Cell", 1:nrow(samp.mat)), sep=".")
+        rownames(samp.mat) <- cell.names
+        node.list[[samp]] <- samp.mat
+      }
+    }
+    samp.list[[node]] <- do.call(rbind.data.frame,
+                                 node.list)
+  }
+}
+
+# remove samples with < 1000 events recorded
+cd4.thcell.flow <- flowset.list[["/CD4"]]
+extract <- numeric(0)
+for(x in seq_len(length(cd4.thcell.flow))){
+  events <- nrow(cd4.thcell.flow[[x]])
+  if(events < 1000){
+    extract <- c(extract, x)
+  }
+}
+
+P9.cd4thcell.flow <- cd4.thcell.flow[seq(along=cd4.thcell.flow)]
+if(length(extract)){P9.cd4thcell.flow <- P9.cd4thcell.flow[-(extract),]}
+
+# remove samples with < 1000 events recorded
+cd8.thcell.flow <- flowset.list[["/CD8"]]
+extract <- numeric(0)
+for(x in seq_len(length(cd8.thcell.flow))){
+  events <- nrow(cd8.thcell.flow[[x]])
+  if(events < 1000){
+    extract <- c(extract, x)
+  }
+}
+
+P9.cd8thcell.flow <- cd8.thcell.flow[seq(along=cd8.thcell.flow)]
+if(length(extract)){P9.cd8thcell.flow <- P9.cd8thcell.flow[-(extract),]}
+```
+
+
+```{r}
+# instantiate a new GatingSet to continue the hierarchical gating
+P9.cd4thcell.gs <- GatingSet(P9.cd4thcell.flow)
+P9.cd8thcell.gs <- GatingSet(P9.cd8thcell.flow)
+```
+
+
+```{r}
+################################################
+# T cell groups defined by this population:
+# CD8+CCR6-CXCR3-
+# CD8+CCR6+CXCR3+
+# CD4+CCR6+CXCR3-
+# CD4+CCR6-CXCR3-CXCR5+
+# CD4+CCR6-CXCR3-CRTh2+
+
+###################
+# CD8+CCR6-CXCR3- #
+###################
+# What T cell subset are these? CD8+ Th2?
+ccr6.points <- c(0, 0, 7.25, 7.25, 0)
+cxcr3.points <- c(0, 7.5, 7.5, 0, 0)
+cd8th1.gate <- polygonGate(filterId="Th2", .gate=cbind("B3-A"=ccr6.points, "R1-A"=cxcr3.points))
+
+###################
+# CD8+CCR6+CXCR3- #
+###################
+# What T cell subset are these? CD8+ Th1?
+ccr6.points <- c(7.25, 7.25, 12, 12, 7.25)
+cxcr3.points <- c(0, 7.5, 7.5, 0, 0)
+cd8ccr6.gate <- polygonGate(filterId="Th1", .gate=cbind("B3-A"=ccr6.points, "R1-A"=cxcr3.points))
+```
+
+
+```{r, fig.width=2.75, fig.height=2.75}
+th1.p <- ggcyto(P9.cd8thcell.gs[1], aes(x=`R1-A`, y=`B3-A`), subset="root") +
+  geom_hex(bins=128) +
+  labs(x="CXCR3", y="CCR6") +
+    theme_mike() +
+  theme(strip.text=element_blank()) +
+  lims(x=c(0, 12), y=c(0, 12)) +
+  geom_gate(cd8th1.gate) +
+  geom_gate(cd8ccr6.gate)
+
+ggsave(th1.p ,
+       filename="~/Dropbox/Noise_FACS/Replication_cohorts/Milieu_Interieur/plot.dir/P9_Th1_gate.png",
+       height=2.75, width=2.75, dpi=300)
+
+th1.p 
+```
+
+
+```{r}
+flowWorkspace::add(P9.cd8thcell.gs, cd8th1.gate, parent="root")
+recompute(P9.cd8thcell.gs)
+
+flowWorkspace::add(P9.cd8thcell.gs, cd8ccr6.gate, parent="root")
+recompute(P9.cd8thcell.gs)
+
+###################
+# CD4+CCR6-CXCR3- #
+###################
+# What T cell subset are these? CD8+ Th1?
+ccr6.points <- c(0, 0, 7.25, 7.25, 0)
+cxcr3.points <- c(0, 7.75, 7.75, 0, 0)
+cd4ccr6neg.gate <- polygonGate(filterId="CCR6neg", .gate=cbind("B3-A"=ccr6.points, "R1-A"=cxcr3.points))
+
+###################
+# CD4+CCR6+CXCR3- #
+###################
+# What T cell subset are these? CD8+ Th1?
+ccr6.points <- c(7.25, 7.25, 12, 12, 7.25)
+cxcr3.points <- c(0, 7.75, 7.75, 0, 0)
+cd4ccr6.gate <- polygonGate(filterId="Th17", .gate=cbind("B3-A"=ccr6.points, "R1-A"=cxcr3.points))
+```
+
+
+```{r}
+flowWorkspace::add(P9.cd4thcell.gs, cd4ccr6neg.gate, parent="root")
+recompute(P9.cd4thcell.gs)
+
+flowWorkspace::add(P9.cd4thcell.gs, cd4ccr6.gate, parent="root")
+recompute(P9.cd4thcell.gs)
+```
+
+
+```{r}
+##############################################################
+## Extract each CD4 T cell gate then continue with Th subsets
+##############################################################
+cd4.nodes <- getNodes(P9.cd4thcell.gs)[2:length(getNodes(P9.cd4thcell.gs))]
+flowset.list <- list()
+
+for(i in seq_along(cd4.nodes)){
+  node <- cd4.nodes[i]
+  flow.i <- getData(P9.cd4thcell.gs, y=node)
+  
+  # remove samples with < 1000 events recorded
+  extract <- numeric(0)
+  for(x in seq_len(length(flow.i))){
+    events <- nrow(flow.i[[x]])
+    if(events < 500){
+      extract <- c(extract, x)
+    }
+  }
+  
+  flow.i_filt <- flow.i[seq(along=flow.i)]
+  if(length(extract) < length(flow.i_filt)){
+    if(length(extract)){flow.i_filt <- flow.i_filt[-(extract),]}
+    
+    pars <- colnames(flow.i_filt)[c(8, 11, 14, 17, 20, 23, 26, 29)]
+    
+    P9.warping <- tryCatch({
+      second.warp <- c()
+      print(paste("Warping parameters: ", setdiff(pars, second.warp), sep=" "))
+      warpSet(flow.i_filt, stains=setdiff(pars, second.warp))
+    }, warning=function(war){
+      print(paste("MY_WARNING: ", war))
+      second.warp <- c()
+      return(warpSet(flow.i_filt, stains=setdiff(pars, second.warp)))
+    }, error=function(err){
+      print(paste("MY_ERROR :", err))
+      # what should I do in the case of an error? try again?
+      second.warp <- c("V1-A")
+      P9.warping <- warpSet(flow.i_filt, stains=setdiff(pars, second.warp))
+      return(P9.warping)
+    }, finally={
+      print(paste("Warping parameters: ", second.warp, sep=" "))
+    })
+    
+    # third.warp <- c("B4-A")
+    if(length(second.warp) > 0){
+      P9.warping <- warpSet(P9.warping, stains=second.warp, bwFac=1)
+    }
+    # P9.warping <- warpSet(P9.warping, stains=second.warp, peakNr=2, bwFac=1)
+    # P9.warping <- warpSet(P9.warping, stains=third.warp, peakNr=3, bwFac=5, nbreaks=25)
+    
+    # densityplot(x=~`B4-A`,
+    #             data=P9.warping,
+    #             channel=c("B4-A"))
+    
+    flowset.list[[node]] <- P9.warping
+    print(node)
+    
+    samp.names <- sampleNames(P9.warping)
+    node.list <- list()
+    for(x in seq_along(samp.names)){
+      samp <- samp.names[x]
+      samp.flow <- P9.warping[[samp]]
+      samp.mat <- exprs(samp.flow)
+      if(nrow(samp.mat) > 1){
+        samp.mat <- samp.mat[, c("FSC-A", "SSC-A", "FSC-H", pars)]
+        cell.prefix <- paste(samp, gsub(paste0("CD4", node), pattern="/", replacement="_"), sep=".")
+        cell.names <- paste(cell.prefix, paste0("Cell", 1:nrow(samp.mat)), sep=".")
+        rownames(samp.mat) <- cell.names
+        node.list[[samp]] <- samp.mat
+      } else if(nrow(samp.mat) < 1 & nrow(samp.mat) > 0){
+        samp.mat <- as.matrix(samp.mat[, c("FSC-A", "SSC-A", "FSC-H", pars)], ncol=length(pars))
+        cell.prefix <- paste(samp, gsub(paste0("CD4", node), pattern="/", replacement="_"), sep=".")
+        cell.names <- paste(cell.prefix, paste0("Cell", 1:nrow(samp.mat)), sep=".")
+        rownames(samp.mat) <- cell.names
+        node.list[[samp]] <- samp.mat
+      }
+    }
+    samp.list[[paste0("CD4", node)]] <- do.call(rbind.data.frame,
+                                                node.list)
+  }
+}
+
+# remove samples with < 1000 events recorded
+ccr6.neg.flow <- flowset.list[["/CCR6neg"]]
+extract <- numeric(0)
+for(x in seq_len(length(ccr6.neg.flow))){
+  events <- nrow(ccr6.neg.flow[[x]])
+  if(events < 1000){
+    extract <- c(extract, x)
+  }
+}
+
+P9.ccr6neg.flow <- ccr6.neg.flow[seq(along=ccr6.neg.flow)]
+if(length(extract)){P9.ccr6neg.flow <- P9.ccr6neg.flow[-(extract),]}
+```
+
+
+```{r}
+P9.ccr6neg.gs <- GatingSet(P9.ccr6neg.flow)
+```
+
+
+```{r}
+
+#########################
+# CD4+CCR6-CXCR3-CXCR5+ #
+#########################
+# I think these are Tfh cells
+crth2.points <- c(0, 0, 7.75, 7.75, 0)
+cxcr5.points <- c(7.75, 11, 11, 7.75, 7.75)
+tfh.gate <- polygonGate(filterId="Tfh", .gate=cbind("V2-A"=crth2.points, "B1-A"=cxcr5.points))
+
+#########################
+# CD4+CCR6-CXCR3-CRTh2+ #
+#########################
+# I think these are Tfh cells?
+crth2.points <- c(8, 8, 11, 11, 8)
+cxcr5.points <- c(0, 7.5, 7.5, 0, 0)
+th2.gate <- polygonGate(filterId="Th2", .gate=cbind("V2-A"=crth2.points, "B1-A"=cxcr5.points))
+```
+
+
+```{r, fig.width=2.75, fig.height=2.75}
+tfh.p <- ggcyto(P9.ccr6neg.gs[1], aes(x=`B1-A`, y=`V2-A`), subset="root") +
+  geom_hex(bins=128) +
+  labs(x="CXCR5", y="CRTh2") +
+  theme_mike() +
+  theme(strip.text=element_blank()) +
+  lims(x=c(0, 12), y=c(0, 12)) +
+  geom_gate(tfh.gate) +
+  geom_gate(th2.gate)
+
+ggsave(tfh.p,
+       filename="~/Dropbox/Noise_FACS/Replication_cohorts/Milieu_Interieur/plot.dir/P9_Th2_gate.png",
+       height=2.75, width=2.75, dpi=300)
+
+tfh.p
+```
+
+
+

@@ -1,0 +1,3267 @@
+---
+title: "TwinsUK - Gating schema"
+output: html_notebook
+editor_options: 
+  chunk_output_type: inline
+---
+
+Herein we can find the gating schema for each cell type from the TwinsUK cohort. For the purposes of plotting this is restricted to 10 individuals from the TwinsUK cohort (arbitrarily 
+selected).
+
+## Panel 1
+
+```{r}
+## TwinsUK flow cytometry processing
+######################################
+### Panel 1 - Memory T cell subsets ##
+######################################
+library(flowCore)
+library(flowWorkspace)
+library(flowStats)
+library(openCyto)
+library(flowViz)
+library(ggcyto)
+library(ggplot2)
+library(ggridges)
+source("~/Dropbox/R_sessions/SingleCellFunctions/single_cell_functions.R")
+source("~/Dropbox/R_sessions/GGMike/theme_mike.R")
+
+path.to.files <- "~/Dropbox/Noise_FACS/TwinsUK/FCS_files/"
+P1.flow.data <- read.flowSet(path=path.to.files,
+                             transformation=FALSE, pattern="P1")
+
+twin.ids <- unlist(lapply(strsplit(x=sampleNames(P1.flow.data), split=" ", fixed=TRUE),
+                          FUN=function(X) paste("Twin", X[1], X[2], sep="_")))
+sampleNames(P1.flow.data) <- twin.ids
+
+# apply compensation
+comp.matrix <- keyword(P1.flow.data[[1]])$`$SPILLOVER`
+P1.flow.data <- compensate(P1.flow.data, spillover <- comp.matrix)
+
+# remove samples with < 1000 events recorded
+extract <- numeric(0)
+for(x in seq_len(length(P1.flow.data))){
+  events <- nrow(P1.flow.data[[x]])
+  if(events < 1000){
+    extract <- c(extract, x)
+  }
+}
+
+P1.fs_filt <- P1.flow.data[seq(along=P1.flow.data)]
+if(length(extract)){P1.fs_filt <- P1.fs_filt[-(extract),]}
+
+# subset for plotting purposes
+P1.fs_filt <- P1.fs_filt[1:10]
+```
+
+
+```{r}
+# transform the data
+arcTrans <- arcsinhTransform()
+logTrans <- logTransform()
+biexpTrans <- biexponentialTransform()
+scaleTrans <- scaleTransform()
+logicleTrans <- logicleTransform()
+linearTrans <- linearTransform()
+
+# transform each paramter
+transform1 <- transformList("B515-A", biexpTrans)
+transform2 <- transformList("B710-A", biexpTrans)
+transform3 <- transformList("V450-A", biexpTrans)
+transform4 <- transformList("V545-A", biexpTrans)
+transform5 <- transformList("V565-A", biexpTrans)
+transform6 <- transformList("V585-A", biexpTrans)
+transform7 <- transformList("V605-A", biexpTrans)
+transform8 <- transformList("V655-A", biexpTrans)
+transform9 <- transformList("V705-A", biexpTrans)
+transform10 <- transformList("V800-A", biexpTrans)
+transform11 <- transformList("R660-A", biexpTrans)
+transform12 <- transformList("R710-A", biexpTrans)
+transform13 <- transformList("R780-A", biexpTrans)
+transform14 <- transformList("G560-A", biexpTrans)
+transform15 <- transformList("G610-A", biexpTrans)
+transform16 <- transformList("G660-A", biexpTrans)
+transform17 <- transformList("G710-A", biexpTrans)
+transform18 <- transformList("G780-A", biexpTrans)
+transformForwardH <- transformList("FSC-H", biexpTrans)
+transformSideA <- transformList("SSC-A", biexpTrans)
+transformForwardA <- transformList("FSC-A", biexpTrans)
+
+P1.fs_filt <- transform(P1.fs_filt, transform1)
+P1.fs_filt <- transform(P1.fs_filt, transform2)
+P1.fs_filt <- transform(P1.fs_filt, transform3)
+P1.fs_filt <- transform(P1.fs_filt, transform4)
+P1.fs_filt <- transform(P1.fs_filt, transform5)
+P1.fs_filt <- transform(P1.fs_filt, transform6)
+P1.fs_filt <- transform(P1.fs_filt, transform7)
+P1.fs_filt <- transform(P1.fs_filt, transform8)
+P1.fs_filt <- transform(P1.fs_filt, transform9)
+P1.fs_filt <- transform(P1.fs_filt, transform10)
+P1.fs_filt <- transform(P1.fs_filt, transform11)
+P1.fs_filt <- transform(P1.fs_filt, transform12)
+P1.fs_filt <- transform(P1.fs_filt, transform13)
+P1.fs_filt <- transform(P1.fs_filt, transform14)
+P1.fs_filt <- transform(P1.fs_filt, transform15)
+P1.fs_filt <- transform(P1.fs_filt, transform16)
+P1.fs_filt <- transform(P1.fs_filt, transform17)
+P1.fs_filt <- transform(P1.fs_filt, transform18)
+```
+
+
+```{r, fig.height=2.75, fig.width=2.75}
+# set up a singlets gate
+# setup forward and side scatter gates
+area.points <- c(3.2e4, 5e4, 2.5e5, 2.5e5, 3.5e4, 3.2e4)
+height.points <- c(3.2e4, 3.2e4, 2e5, 2.3e5, 5e4, 3.2e4)
+singlet.gate <- polygonGate(filterId="Singlet", .gate=cbind("FSC-A"=area.points, "FSC-H"=height.points))
+singlet.filter <- filter(P1.fs_filt, singlet.gate)
+singlet.gates <- lapply(singlet.filter, 
+                        function(res) filterDetails(res, "Singlet")$filter)
+
+p1.singlet.p <- ggcyto(P1.fs_filt[1], aes(x=`FSC-A`, y=`FSC-H`)) +
+  geom_hex(bins=128) +
+  lims(x=c(30000, 2.7e5), y=c(30000, 2.7e5)) +
+  geom_gate(singlet.gates) +
+  theme_mike() +
+  theme(strip.text=element_blank())
+
+ggsave(p1.singlet.p,
+       filename="~/Dropbox/Noise_FACS/TwinsUK/plot.dir/P1_singlet_gate.png",
+       height=2.75, width=2.75, dpi=300)
+
+p1.singlet.p
+```
+
+```{r}
+# subset all singlet cells before all other analyses
+P1.singlet <- Subset(P1.fs_filt, singlet.gate)
+
+# select live cells on Side scatter and AqBlue
+live.range <- rectangleGate(filterId="Live", list("V545-A"=c(0, 7)))
+live.filter <- filter(P1.singlet, live.range)
+live.gates <- lapply(live.filter, 
+                     function(res) filterDetails(res, "Live")$filter)
+```
+
+
+```{r, fig.height=2.75, fig.width=2.75}
+viable.p <- ggcyto(P1.singlet[1], aes(x=`V545-A`, y=`SSC-A`)) +
+  geom_hex(bins=128)  +
+  geom_gate(live.gates) +
+  theme_mike() +
+  labs(x="AqBlu") +
+  theme(strip.text=element_blank())
+
+ggsave(viable.p,
+       filename="~/Dropbox/Noise_FACS/TwinsUK/plot.dir/P1_live_gate.png",
+       height=2.75, width=2.75, dpi=300)
+
+viable.p
+```
+
+
+```{r}
+# subset all live cells before all other analyses
+P1.filter <- Subset(P1.singlet, live.range)
+
+# apply side and forward scatter transformations
+P1.filter <- transform(P1.filter, transformForwardH)
+P1.filter <- transform(P1.filter, transformSideA)
+P1.filter <- transform(P1.filter, transformForwardA)
+
+# ggcyto(P1.filter[1:6], aes(x=`SSC-A`, y=`FSC-A`)) +
+#   geom_hex(bins=128) 
+
+#################################################
+## need to align main parameters before gating ##
+#################################################
+### some parameters aren't being registered properly
+# might need to only select cells with values > 0
+
+# might need to split the parameters to get those with 2 peaks
+# properly aligned compare to those with shoulder peaks.
+# I need to warp some parameters separately to others
+pars <- colnames(P1.filter)[4:21]
+first.warp <- c("B515-A", "V450-A", "V585-A", "V705-A", "R660-A", "R780-A")
+second.warp <- c("V605-A", "R710-A", "G710-A", "G780-A")
+P1.warping <- warpSet(P1.filter, stains=first.warp)
+P1.warping <- warpSet(P1.warping, stains=second.warp, peakNr=2)
+ 
+# densityplot(x=~`G780-A`,
+#             data=P1.warping[4:9],
+#             channel=c("G780-A"))
+
+# set up gating scheme using a GatingSet object
+P1.gs <- GatingSet(P1.warping)
+```
+
+```{r}
+# plot CD3 vs side scater to select T cells
+tcell.gate <- rectangleGate(filterId="CD3", list("R780-A"=c(7.5, 100)))
+flowWorkspace::add(P1.gs, tcell.gate, parent="root")
+recompute(P1.gs)
+```
+
+
+```{r, fig.height=2.75, fig.width=2.75, warning=FALSE}
+# # plot CD4 Vs CD8 to get major T cell subsets
+cd3.p <- ggcyto(P1.gs[1], aes(x=`SSC-A`, y=`R780-A`), subset="root") +
+  geom_hex(bins=256) +
+  theme_mike() +
+  geom_gate(tcell.gate) +
+  labs(x="SSC-A", y="CD3 H7 APC", main="") +
+  theme(strip.text=element_blank())  +
+  lims(y=c(0, 12))
+
+ggsave(cd3.p,
+       filename="~/Dropbox/Noise_FACS/TwinsUK/plot.dir/P1_CD3_gate.png",
+       height=2.75, width=2.75, dpi=300)
+
+cd3.p
+```
+
+```{r}
+# might need 4 different gates to get the two SP populations, then the DP and DN cells
+cd8.points <- c(7.5, 11, 11, 7.5, 7.5)
+cd4.points <- c(0, 0, 6, 6, 0)
+cd8.gate <- polygonGate(filterId="CD8", .gate=cbind("V585-A"=cd8.points, "V605-A"=cd4.points))
+# cd8.filter <- filter(getData(P1.gs, "CD3"), cd8.gate)
+# cd8.gates <- lapply(cd8.filter, 
+#                     function(res) filterDetails(res, "CD8")$filter)
+
+
+# might need 4 different gates to get the two SP populations, then the DP and DN cells
+cd8.points <- c(7.5, 7.5, 0, 0, 7.5)
+cd4.points <- c(6.75, 10, 10, 6.75, 6.75)
+cd4.gate <- polygonGate(filterId="CD4", .gate=cbind("V585-A"=cd8.points, "V605-A"=cd4.points))
+# cd4.filter <- filter(getData(P1.gs, "CD3"), cd4.gate)
+# cd4.gates <- lapply(cd4.filter, 
+#                     function(res) filterDetails(res, "CD4")$filter)
+
+
+# might need 4 different gates to get the two SP populations, then the DP and DN cells
+cd8.points <- c(0, 6.5, 6.5, 0, 0)
+cd4.points <- c(0, 0, 6, 6, 0)
+DN.gate <- polygonGate(filterId="DN", .gate=cbind("V585-A"=cd8.points, "V605-A"=cd4.points))
+# DN.filter <- filter(getData(P1.gs, "CD3"), DN.gate)
+# DN.gates <- lapply(DN.filter, 
+#                     function(res) filterDetails(res, "DN")$filter)
+
+# might need 4 different gates to get the two SP populations, then the DP and DN cells
+cd8.points <- c(8.5, 11, 11, 8.5, 8.5)
+cd4.points <- c(6.75, 6.75, 10, 10, 6.75)
+DP.gate <- polygonGate(filterId="DP", .gate=cbind("V585-A"=cd8.points, "V605-A"=cd4.points))
+# DP.filter <- filter(getData(P1.gs, "CD3"), DP.gate)
+# DP.gates <- lapply(DP.filter, 
+#                    function(res) filterDetails(res, "DN")$filter)
+# 
+# # plot CD4 Vs CD8 to get major T cell subsets
+# ggcyto(P1.gs[1:6], aes(x=`V585-A`, y=`V605-A`), subset="CD3") +
+#   geom_hex(bins=256) +
+#   lims(x=c(0, 12), y=c(0, 12)) +
+#   geom_gate(cd4.gate) +
+#   geom_gate(cd8.gate) +
+#   geom_gate(DN.gate) +
+#   geom_gate(DP.gate)
+```
+
+
+```{r}
+# add the T cell gates
+flowWorkspace::add(P1.gs, cd4.gate, parent="CD3")
+recompute(P1.gs)
+
+flowWorkspace::add(P1.gs, cd8.gate, parent="CD3")
+recompute(P1.gs)
+
+flowWorkspace::add(P1.gs, DN.gate, parent="CD3")
+recompute(P1.gs)
+
+flowWorkspace::add(P1.gs, DP.gate, parent="CD3")
+recompute(P1.gs)
+```
+
+
+```{r, fig.height=2.75, fig.width=2.75, warning=FALSE}
+cd4.p <- ggcyto(P1.gs[1], aes(x=`V605-A`, y=`V585-A`), subset="/CD3") +
+  geom_hex(bins=128) +
+  theme_mike() +
+  labs(y="CD8 QD585", x="CD4 BV605", main="") +
+  theme(strip.text=element_blank())  +
+  lims(x=c(0, 12), y=c(0, 12)) +
+  geom_gate(cd4.gate) +
+  geom_gate(cd8.gate) +
+  geom_gate(DN.gate) +
+  geom_gate(DP.gate)
+
+ggsave(cd4.p,
+       filename="~/Dropbox/Noise_FACS/TwinsUK/plot.dir/P1_Tcell_gate_plot.png",
+       height=2.75, width=2.75, dpi=300)
+
+cd4.p
+```
+
+
+
+
+```{r}
+# T cell groups defined by this population:
+# RTE, Naive, T-SCM, T-CM, T-TM, T-EM, T-TE, Senescent
+# T-TM - transitional memory
+# T-SCM - stem cell memory (earliest memory stage)
+# T-CM - central memory
+# T-EM - efector memory
+# T-TE - ???
+
+# add a CCR7 gate
+# might need 4 different gates to get the two SP populations, then the DP and DN cells
+ccr7.neg.gate <- rectangleGate(filterId="CCR7neg", list("R710-A"=c(0, 2.5)))
+flowWorkspace::add(P1.gs, ccr7.neg.gate, parent="CD4")
+recompute(P1.gs)
+
+flowWorkspace::add(P1.gs, ccr7.neg.gate, parent="CD8")
+recompute(P1.gs)
+
+ccr7.pos.gate <- rectangleGate(filterId="CCR7pos", list("R710-A"=c(2.5, 12.5)))
+flowWorkspace::add(P1.gs, ccr7.pos.gate, parent="CD4")
+recompute(P1.gs)
+
+flowWorkspace::add(P1.gs, ccr7.pos.gate, parent="CD8")
+recompute(P1.gs)
+```
+
+
+
+```{r, fig.width=2.75, fig.height=2.75}
+# plot the remaining T cell markers
+ccr7.gates.p <- ggcyto(P1.gs[1], aes(x=`V605-A`, y=`R710-A`), subset="/CD3/CD4") +
+  geom_hex(bins=64) +
+  lims(x=c(0, 13), y=c(0, 13)) +
+  theme_mike() +
+  labs(main="", y="CCR7 Ax680", x="CD4 BV605") +
+  theme(strip.text=element_blank()) +
+  geom_gate(ccr7.pos.gate) +
+  geom_gate(ccr7.neg.gate)
+
+ggsave(ccr7.gates.p,
+       filename="~/Dropbox/Noise_FACS/TwinsUK/plot.dir/P1_CCR7-CD4_gate.png",
+       height=2.75, width=2.75, dpi=300)
+
+ccr7.gates.p
+```
+
+
+```{r, fig.width=2.75, fig.height=2.75}
+# plot the remaining T cell markers
+ccr7.gates.p <- ggcyto(P1.gs[1], aes(x=`V585-A`, y=`R710-A`), subset="/CD3/CD8") +
+  geom_hex(bins=64) +
+  lims(x=c(0, 13), y=c(0, 13)) +
+  theme_mike() +
+  labs(main="", y="CCR7 Ax680", x="CD8 QD585") +
+  theme(strip.text=element_blank()) +
+  geom_gate(ccr7.pos.gate) +
+  geom_gate(ccr7.neg.gate)
+
+ggsave(ccr7.gates.p,
+       filename="~/Dropbox/Noise_FACS/TwinsUK/plot.dir/P1_CCR7-CD8_gate.png",
+       height=2.75, width=2.75, dpi=300)
+
+ccr7.gates.p
+```
+
+
+```{r}
+##############################################
+# Effector memory T cell - CCR7-CD95+CD45RA- #
+##############################################
+# might need 4 different gates to get the two SP populations, then the DP and DN cells
+cd95.points <- c(2.5, 11, 11, 2.5, 2.5)
+cd45ra.points <- c(6.25, 6.25, 11, 11, 6.25)
+EM.gate <- polygonGate(filterId="EM", .gate=cbind("G560-A"=cd95.points, "R660-A"=cd45ra.points))
+# EM.filter <- filter(getData(P1.gs, "CD4"), EM.gate)
+# EM.gates <- lapply(EM.filter, 
+#                    function(res) filterDetails(res, "EM")$filter)
+
+
+flowWorkspace::add(P1.gs, EM.gate, parent="/CD3/CD4/CCR7neg")
+recompute(P1.gs)
+
+flowWorkspace::add(P1.gs, EM.gate, parent="/CD3/CD8/CCR7neg")
+recompute(P1.gs)
+```
+
+
+```{r, fig.width=2.75, fig.height=2.75}
+# plot the remaining T cell markers
+em.gates.p <- ggcyto(P1.gs[1], aes(x=`G560-A`, y=`R660-A`), subset="/CD3/CD4/CCR7neg") +
+  geom_hex(bins=64) +
+  lims(x=c(0, 13), y=c(0, 13)) +
+  theme_mike() +
+  labs(main="", x="CD45RA APC", y="CD95 PE") +
+  theme(strip.text=element_blank()) +
+  geom_gate(EM.gate)
+
+ggsave(em.gates.p,
+       filename="~/Dropbox/Noise_FACS/TwinsUK/plot.dir/P1_CD4EM_gate.png",
+       height=2.75, width=2.75, dpi=300)
+
+em.gates.p
+```
+
+
+
+```{r}
+##############################################
+# Naive T cell - CCR7+CD127+CD45RA+ #
+##############################################
+# might need 4 different gates to get the two SP populations, then the DP and DN cells
+cd127.points <- c(5, 11, 11, 5, 5)
+cd45ra.points <- c(6, 6, 11, 11, 6)
+
+Naive.gate <- polygonGate(filterId="Naive", .gate=cbind("V450-A"=cd127.points, "R660-A"=cd45ra.points))
+# Naive.filter <- filter(getData(P1.gs, "CD4"), Naive.gate)
+# Naive.gates <- lapply(Naive.filter, 
+#                       function(res) filterDetails(res, "Naive")$filter)
+
+flowWorkspace::add(P1.gs, Naive.gate, parent="/CD3/CD4/CCR7pos")
+recompute(P1.gs)
+
+flowWorkspace::add(P1.gs, Naive.gate, parent="/CD3/CD8/CCR7pos")
+recompute(P1.gs)
+```
+
+
+```{r, fig.width=2.75, fig.height=2.75}
+# plot the remaining T cell markers
+naive.gates.p <- ggcyto(P1.gs[1], aes(x=`V450-A`, y=`R660-A`), subset="/CD3/CD4/CCR7pos") +
+  geom_hex(bins=64) +
+  lims(x=c(0, 13), y=c(0, 13)) +
+  theme_mike() +
+  labs(main="", x="CD45RA APC", y="CD127 PE") +
+  theme(strip.text=element_blank()) +
+  geom_gate(Naive.gate)
+
+ggsave(naive.gates.p,
+       filename="~/Dropbox/Noise_FACS/TwinsUK/plot.dir/P1_CD4naive_gate.png",
+       height=2.75, width=2.75, dpi=300)
+
+naive.gates.p
+```
+
+
+
+```{r, fig.width=2.75, fig.height=2.75}
+# plot the remaining T cell markers
+naive.gates.p <- ggcyto(P1.gs[1], aes(x=`V450-A`, y=`R660-A`), subset="/CD3/CD8/CCR7pos") +
+  geom_hex(bins=64) +
+  lims(x=c(0, 13), y=c(0, 13)) +
+  theme_mike() +
+  labs(main="", x="CD45RA APC", y="CD127 PE") +
+  theme(strip.text=element_blank()) +
+  geom_gate(Naive.gate)
+
+ggsave(naive.gates.p,
+       filename="~/Dropbox/Noise_FACS/TwinsUK/plot.dir/P1_CD8naive_gate.png",
+       height=2.75, width=2.75, dpi=300)
+
+naive.gates.p
+```
+
+
+```{r}
+##########################################
+# Recent thymic emigrants - CD31+CD45RA+ #
+##########################################
+# might need 4 different gates to get the two SP populations, then the DP and DN cells
+cd31.points <- c(9.5, 12, 12, 9.5, 9.5)
+cd45ra.points <- c(7, 7, 12, 12, 7)
+RTE.gate <- polygonGate(filterId="RTE", .gate=cbind("G780-A"=cd31.points, "R660-A"=cd45ra.points))
+# RTE.filter <- filter(getData(P1.gs, "CD4"), RTE.gate)
+# RTE.gates <- lapply(RTE.filter, 
+#                    function(res) filterDetails(res, "RTE")$filter)
+# 
+# # # plot the remaining T cell markers
+# ggcyto(P1.gs[4:9], aes(x=`G780-A`, y=`R660-A`), subset="CD3") +
+#   geom_hex(bins=128) +
+#   lims(x=c(0, 12), y=c(0, 12)) +
+#   geom_gate(RTE.gate)
+
+flowWorkspace::add(P1.gs, RTE.gate, parent="CD4")
+recompute(P1.gs)
+
+flowWorkspace::add(P1.gs, RTE.gate, parent="CD8")
+recompute(P1.gs)
+```
+
+
+```{r, fig.width=2.75, fig.height=2.75}
+# plot the remaining T cell markers
+rte.gates.p <- ggcyto(P1.gs[1], aes(x=`G780-A`, y=`R660-A`), subset="CD3") +
+  geom_hex(bins=64) +
+  lims(x=c(0, 13), y=c(0, 13)) +
+  theme_mike() +
+  labs(main="", x="CD31 Cy7 PE", y="CD45RA APC") +
+  theme(strip.text=element_blank()) +
+  geom_gate(RTE.gate)
+
+ggsave(rte.gates.p,
+       filename="~/Dropbox/Noise_FACS/TwinsUK/plot.dir/P1_RTE_gate.png",
+       height=2.75, width=2.75, dpi=300)
+
+rte.gates.p
+```
+
+
+
+```{r}
+#############################################
+# Transitional memory T - CCR7-CD95+CD45RA- #
+#############################################
+# might need 4 different gates to get the two SP populations, then the DP and DN cells
+cd95.points <- c(6.0, 11, 11, 7.5, 7.5, 6.0, 6.0)
+cd45ra.points <- c(0, 0, 7, 7, 6.75, 6.25, 0)
+TTM.gate <- polygonGate(filterId="TTM", .gate=cbind("G560-A"=cd95.points, "R660-A"=cd45ra.points))
+# TTM.filter <- filter(getData(P1.gs, "CD4"), TTM.gate)
+# TTM.gates <- lapply(TTM.filter, 
+#                     function(res) filterDetails(res, "TTM")$filter)
+
+flowWorkspace::add(P1.gs, TTM.gate, parent="/CD3/CD4/CCR7neg")
+recompute(P1.gs)
+
+flowWorkspace::add(P1.gs, TTM.gate, parent="/CD3/CD8/CCR7neg")
+recompute(P1.gs)
+```
+
+
+```{r, fig.width=2.75, fig.height=2.75}
+# plot the remaining T cell markers
+ttm.gates.p <- ggcyto(P1.gs[1], aes(x=`G560-A`, y=`R660-A`), subset="/CD3/CD4/CCR7neg") +
+  geom_hex(bins=64) +
+  lims(x=c(0, 13), y=c(0, 13)) +
+  theme_mike() +
+  labs(main="", x="CD45RA APC", y="CD95 PE") +
+  theme(strip.text=element_blank()) +
+  geom_gate(TTM.gate)
+
+ggsave(ttm.gates.p,
+       filename="~/Dropbox/Noise_FACS/TwinsUK/plot.dir/P1_CD4TTM_gate.png",
+       height=2.75, width=2.75, dpi=300)
+
+ttm.gates.p
+```
+
+
+
+```{r}
+##########################################
+# Memory stem cell T - CCR7+CD95+CD45RA+ #
+##########################################
+# might need 4 different gates to get the two SP populations, then the DP and DN cells
+cd95.points <- c(6, 12, 12, 7.5, 6)
+cd45ra.points <- c(7.5, 7.5, 11, 11, 8.25)
+SCM.gate <- polygonGate(filterId="SCM", .gate=cbind("G560-A"=cd95.points, "R660-A"=cd45ra.points))
+# SCM.filter <- filter(getData(P1.gs, "/CD3/CD4/CCR7pos"), SCM.gate)
+# SCM.gates <- lapply(SCM.filter, 
+#                     function(res) filterDetails(res, "SCM")$filter)
+
+flowWorkspace::add(P1.gs, SCM.gate, parent="/CD3/CD4/CCR7pos")
+recompute(P1.gs)
+
+flowWorkspace::add(P1.gs, SCM.gate, parent="/CD3/CD8/CCR7pos")
+recompute(P1.gs)
+```
+
+
+```{r, fig.width=2.75, fig.height=2.75}
+# plot the remaining T cell markers
+scm.gates.p <- ggcyto(P1.gs[1], aes(x=`G560-A`, y=`R660-A`), subset="/CD3/CD4/CCR7pos") +
+  geom_hex(bins=64) +
+  lims(x=c(0, 13), y=c(0, 13)) +
+  theme_mike() +
+  labs(main="", x="CD45RA APC", y="CD95 PE") +
+  theme(strip.text=element_blank()) +
+  geom_gate(SCM.gate)
+
+ggsave(scm.gates.p,
+       filename="~/Dropbox/Noise_FACS/TwinsUK/plot.dir/P1_CD4SCM_gate.png",
+       height=2.75, width=2.75, dpi=300)
+
+scm.gates.p
+```
+
+
+
+```{r}
+#############################################
+# Central memory T cell - CCR7+CD28+CD45RA- #
+#############################################
+# might need 4 different gates to get the two SP populations, then the DP and DN cells
+cd28.points <- c(6.5, 12, 12, 6.5, 6.5)
+cd45ra.points <- c(0, 0, 7, 7, 0)
+CM.gate <- polygonGate(filterId="CM", .gate=cbind("G660-A"=cd28.points, "R660-A"=cd45ra.points))
+# CM.filter <- filter(getData(P1.gs, "CD4"), CM.gate)
+# CM.gates <- lapply(CM.filter, 
+#                     function(res) filterDetails(res, "CM")$filter)
+
+flowWorkspace::add(P1.gs, CM.gate, parent="/CD3/CD4/CCR7pos")
+recompute(P1.gs)
+
+flowWorkspace::add(P1.gs, CM.gate, parent="/CD3/CD8/CCR7pos")
+recompute(P1.gs)
+```
+
+
+
+```{r, fig.width=2.75, fig.height=2.75}
+# plot the remaining T cell markers
+cm.gates.p <- ggcyto(P1.gs[1], aes(x=`G660-A`, y=`R660-A`), subset="/CD3/CD4/CCR7pos") +
+  geom_hex(bins=64) +
+  lims(x=c(0, 13), y=c(0, 13)) +
+  theme_mike() +
+  labs(main="", x="CD28 Cy5 PE", y="CD45RA APC") +
+  theme(strip.text=element_blank()) +
+  geom_gate(CM.gate)
+
+ggsave(cm.gates.p,
+       filename="~/Dropbox/Noise_FACS/TwinsUK/plot.dir/P1_CD4CM_gate.png",
+       height=2.75, width=2.75, dpi=300)
+
+cm.gates.p
+```
+
+```{r}
+# flush all the files out before the next panel
+sink(file="/dev/null")
+rm(list=ls())
+gc()
+sink(file=NULL)
+```
+
+
+## Panel 2
+
+```{r}
+path.to.files <- "~/Dropbox/Noise_FACS/TwinsUK/FCS_files/"
+P2.flow.data <- read.flowSet(path=path.to.files,
+                             transformation=FALSE, pattern="P2")
+
+twin.ids <- unlist(lapply(strsplit(x=sampleNames(P2.flow.data), split=" ", fixed=TRUE),
+                          FUN=function(X) paste("Twin", X[1], X[2], sep="_")))
+sampleNames(P2.flow.data) <- twin.ids
+
+P2.flow.data <- P2.flow.data[1:10]
+# apply compensation
+comp.matrix <- keyword(P2.flow.data[[1]])$`$SPILLOVER`
+P2.flow.data <- compensate(P2.flow.data, spillover <- comp.matrix)
+
+# remove samples with < 1000 events recorded
+extract <- numeric(0)
+for(x in seq_len(length(P2.flow.data))){
+  events <- nrow(P2.flow.data[[x]])
+  if(events < 1000){
+    extract <- c(extract, x)
+  }
+}
+
+P2.fs_filt <- P2.flow.data[seq(along=P2.flow.data)]
+if(length(extract)){P2.fs_filt <- P2.fs_filt[-(extract),]}
+
+# remove channels that aren't interesting
+param.desc <-  pData(parameters(P2.flow.data[[1]]))[, "desc"]
+names(param.desc) <- colnames(P2.flow.data[[1]])
+param.desc[is.na(param.desc)] <- names(param.desc)[is.na(param.desc)]
+param.meta <- do.call(cbind.data.frame,
+                      list("Param"=names(param.desc),
+                           "Marker"=param.desc))
+
+# transform the data
+arcTrans <- arcsinhTransform()
+logTrans <- logTransform()
+biexpTrans <- biexponentialTransform()
+scaleTrans <- scaleTransform()
+logicleTrans <- logicleTransform()
+linearTrans <- linearTransform()
+
+# transform each paramter
+transform1 <- transformList("B515-A", biexpTrans)
+transform2 <- transformList("B710-A", biexpTrans)
+transform3 <- transformList("V450-A", biexpTrans)
+transform4 <- transformList("V545-A", biexpTrans)
+transform5 <- transformList("V565-A", biexpTrans)
+transform6 <- transformList("V585-A", biexpTrans)
+transform7 <- transformList("V605-A", biexpTrans)
+transform8 <- transformList("V655-A", biexpTrans)
+transform9 <- transformList("V705-A", biexpTrans)
+transform10 <- transformList("V800-A", biexpTrans)
+transform11 <- transformList("R660-A", biexpTrans)
+transform12 <- transformList("R710-A", biexpTrans)
+transform13 <- transformList("R780-A", biexpTrans)
+transform14 <- transformList("G560-A", biexpTrans)
+transform15 <- transformList("G610-A", biexpTrans)
+transform16 <- transformList("G660-A", biexpTrans)
+transform17 <- transformList("G710-A", biexpTrans)
+transform18 <- transformList("G780-A", biexpTrans)
+transformForwardH <- transformList("FSC-H", biexpTrans)
+transformSideA <- transformList("SSC-A", biexpTrans)
+transformForwardA <- transformList("FSC-A", biexpTrans)
+
+P2.fs_filt <- transform(P2.fs_filt, transform1)
+P2.fs_filt <- transform(P2.fs_filt, transform2)
+P2.fs_filt <- transform(P2.fs_filt, transform3)
+P2.fs_filt <- transform(P2.fs_filt, transform4)
+P2.fs_filt <- transform(P2.fs_filt, transform5)
+P2.fs_filt <- transform(P2.fs_filt, transform6)
+P2.fs_filt <- transform(P2.fs_filt, transform7)
+P2.fs_filt <- transform(P2.fs_filt, transform8)
+P2.fs_filt <- transform(P2.fs_filt, transform9)
+P2.fs_filt <- transform(P2.fs_filt, transform10)
+P2.fs_filt <- transform(P2.fs_filt, transform11)
+P2.fs_filt <- transform(P2.fs_filt, transform12)
+P2.fs_filt <- transform(P2.fs_filt, transform13)
+P2.fs_filt <- transform(P2.fs_filt, transform14)
+P2.fs_filt <- transform(P2.fs_filt, transform15)
+P2.fs_filt <- transform(P2.fs_filt, transform16)
+P2.fs_filt <- transform(P2.fs_filt, transform17)
+P2.fs_filt <- transform(P2.fs_filt, transform18)
+```
+
+
+```{r}
+# # gate on singlets
+# ggcyto(P2.fs_filt[1:6], aes(x=`FSC-A`, y=`FSC-H`)) +
+#   geom_hex(bins=128) +
+#   lims(x=c(35000, 2.7e5), y=c(35000, 2.7e5))
+
+# set up a singlets gate
+# setup forward and side scatter gates
+area.points <- c(3e4, 5e4, 2.3e5, 2.3e5, 3.5e4, 3.2e4)
+height.points <- c(3.2e4, 3.2e4, 2e5, 2.5e5, 5e4, 3.2e4)
+singlet.gate <- polygonGate(filterId="Singlet", .gate=cbind("FSC-A"=area.points, "FSC-H"=height.points))
+singlet.filter <- filter(P2.fs_filt, singlet.gate)
+singlet.gates <- lapply(singlet.filter, 
+                        function(res) filterDetails(res, "Singlet")$filter)
+```
+
+
+```{r, fig.height=2.75, fig.width=2.75}
+p2.singlet.p <- ggcyto(P2.fs_filt[1], aes(x=`FSC-A`, y=`FSC-H`)) +
+  geom_hex(bins=128) +
+  lims(x=c(30000, 2.7e5), y=c(30000, 2.7e5)) +
+  geom_gate(singlet.gates) +
+  theme_mike() +
+  theme(strip.text=element_blank())
+
+ggsave(p2.singlet.p,
+       filename="~/Dropbox/Noise_FACS/TwinsUK/plot.dir/P2_singlet_gate.png",
+       height=2.75, width=2.75, dpi=300)
+
+p2.singlet.p
+```
+
+
+
+```{r}
+# subset all singlet cells before all other analyses
+P2.singlet <- Subset(P2.fs_filt, singlet.gate)
+
+# select live cells on Side scatter and AqBlue
+live.range <- rectangleGate(filterId="Live", list("V545-A"=c(0, 7.5)))
+live.filter <- filter(P2.singlet, live.range)
+live.gates <- lapply(live.filter, 
+                     function(res) filterDetails(res, "Live")$filter)
+```
+
+
+```{r, fig.height=2.75, fig.width=2.75}
+p.live <- ggcyto(P2.singlet[1], aes(x=`V545-A`, y=`SSC-A`)) +
+  geom_hex(bins=128)  +
+  geom_gate(live.gates) +
+  theme_mike() +
+  labs(x="Aq Blu") +
+  theme(strip.text=element_blank())
+
+ggsave(p.live,
+       filename="~/Dropbox/Noise_FACS/TwinsUK/plot.dir/P2_live_gate.png",
+       height=2.75, width=2.75, dpi=300)
+
+p.live
+```
+
+
+```{r}
+# subset all live cells before all other analyses
+P2.filter <- Subset(P2.singlet, live.range)
+
+# apply side and forward scatter transformations
+P2.filter <- transform(P2.filter, transformForwardH)
+P2.filter <- transform(P2.filter, transformSideA)
+P2.filter <- transform(P2.filter, transformForwardA)
+
+# ggcyto(P2.filter[1:6], aes(x=`SSC-A`, y=`FSC-A`)) +
+#   geom_hex(bins=128) 
+
+#################################################
+## need to align main parameters before gating ##
+#################################################
+### some parameters aren't being registered properly
+# might need to only select cells with values > 0
+
+# might need to split the parameters to get those with 2 peaks
+# properly aligned compare to those with shoulder peaks.
+# I need to warp some parameters separately to others
+pars <- colnames(P2.filter)[4:21]
+P2.warping <- warpSet(P2.filter, stains=pars, bwFac=1.5)
+#P2.warping <- warpSet(P2.warping, stains=second.warp, peakNr=2)
+
+densityplot(x=~`R780-A`,
+            data=P2.filter,
+            channel=c("R780-A"))
+```
+
+
+```{r}
+# set up gating scheme using a GatingSet object
+P2.gs <- GatingSet(P2.warping)
+# 
+# rm(list=c("P2.warping", "P2.filter", "P2.flow.data", "P2.fs_filt",
+# 	"P2.singlet"))
+# gc()
+```
+
+```{r}
+# plot CD3 vs side scater to select T cells
+tcell.gate <- rectangleGate(filterId="CD3", list("R780-A"=c(5, 100)))
+flowWorkspace::add(P2.gs, tcell.gate, parent="root")
+recompute(P2.gs)
+```
+
+
+```{r, fig.height=2.75, fig.width=2.75}
+# # plot Cd3 vs side scatter
+cd3.p <- ggcyto(P2.gs[6], aes(x=`SSC-A`, y=`R780-A`), subset="root") +
+  geom_hex(bins=256) +
+  lims(y=c(0, 12)) +
+  theme_mike() +
+  geom_gate(tcell.gate) +
+  labs(x="SSC-A", y="CD3 BV785") +
+  theme(strip.text=element_blank())
+
+ggsave(cd3.p,
+       filename="~/Dropbox/Noise_FACS/TwinsUK/plot.dir/P2_CD3_Gate.png",
+       height=2.75, width=2.75, dpi=300)
+
+cd3.p
+```
+
+
+```{r}
+# # plot CD4 Vs CD8 to get major T cell subsets
+# ggcyto(P2.gs[1:6], aes(x=`V585-A`, y=`V605-A`), subset="CD3") +
+#   geom_hex(bins=256) +
+#   lims(x=c(0, 12), y=c(0, 12))
+
+# might need 4 different gates to get the two SP populations, then the DP and DN cells
+cd8.points <- c(7.5, 11, 11, 7.5, 7.5)
+cd4.points <- c(0, 0, 7, 7, 0)
+cd8.gate <- polygonGate(filterId="CD8", .gate=cbind("V585-A"=cd8.points, "V605-A"=cd4.points))
+
+# might need 4 different gates to get the two SP populations, then the DP and DN cells
+cd8.points <- c(8, 8, 0, 0, 8)
+cd4.points <- c(8, 11, 11, 8, 8)
+cd4.gate <- polygonGate(filterId="CD4", .gate=cbind("V585-A"=cd8.points, "V605-A"=cd4.points))
+
+# might need 4 different gates to get the two SP populations, then the DP and DN cells
+cd8.points <- c(0, 7.5, 7.5, 0, 0)
+cd4.points <- c(0, 0, 6.5, 6.5, 0)
+DN.gate <- polygonGate(filterId="DN", .gate=cbind("V585-A"=cd8.points, "V605-A"=cd4.points))
+
+# might need 4 different gates to get the two SP populations, then the DP and DN cells
+cd8.points <- c(8, 11, 11, 8, 8)
+cd4.points <- c(7, 7, 10, 10, 7)
+DP.gate <- polygonGate(filterId="DP", .gate=cbind("V585-A"=cd8.points, "V605-A"=cd4.points))
+
+# # plot CD4 Vs CD8 to get major T cell subsets
+```
+
+
+```{r, fig.height=2.75, fig.width=2.75}
+tcell.p <- ggcyto(P2.gs[1], aes(x=`V585-A`, y=`V605-A`), subset="CD3") +
+  geom_hex(bins=256) +
+  lims(x=c(0, 12), y=c(0, 12)) +
+  geom_gate(cd8.gate) +
+  geom_gate(cd4.gate) +
+  geom_gate(DN.gate) +
+  geom_gate(DP.gate) +
+  theme_mike() +
+  labs(x="CD8 QD585", y="CD4 BV605") +
+  theme(strip.text=element_blank())
+
+ggsave(tcell.p,
+       filename="~/Dropbox/Noise_FACS/TwinsUK/plot.dir/P2_Tcell_gates.png",
+       height=2.75,width=2.75, dpi=300)
+
+tcell.p
+```
+
+
+
+```{r}
+# add the T cell gates
+flowWorkspace::add(P2.gs, cd4.gate, parent="CD3")
+recompute(P2.gs)
+
+flowWorkspace::add(P2.gs, cd8.gate, parent="CD3")
+recompute(P2.gs)
+
+flowWorkspace::add(P2.gs, DN.gate, parent="CD3")
+recompute(P2.gs)
+
+flowWorkspace::add(P2.gs, DP.gate, parent="CD3")
+recompute(P2.gs)
+
+# T cell groups defined by this population:
+# Activated memory - ?
+# Long-lived memory - ?
+# Exhausted T cells - PD1+CD45RA-CD45RO+
+# Tregs - CD25+
+
+##############################
+# Regulatory T cells - CD25+ #
+##############################
+# Tregs are the super high CD25++ cells
+# might need 4 different gates to get the two SP populations, then the DP and DN cells
+cd25.points <- c(8.5, 12, 12, 8.5, 8.5)
+fsc.points <- c(11, 11, 13.5, 13.5, 11)
+TREG.gate <- polygonGate(filterId="Treg", .gate=cbind("G660-A"=cd25.points, "FSC-A"=fsc.points))
+
+flowWorkspace::add(P2.gs, TREG.gate, parent="/CD3/CD4")
+recompute(P2.gs)
+
+flowWorkspace::add(P2.gs, TREG.gate, parent="/CD3/CD8")
+recompute(P2.gs)
+```
+
+
+```{r, fig.height=2.75, fig.width=2.75}
+#plot the remaining T cell markers
+treg.p <- ggcyto(P2.gs[1], aes(x=`G660-A`, y=`FSC-A`), subset="/CD3/CD4") +
+  geom_hex(bins=64) +
+  lims(x=c(0, 12), y=c(0, 15)) +
+  geom_gate(TREG.gate) +
+  theme_mike() +
+  labs(x="CD25 Cy5 PE", y="FSC-A") +
+  theme(strip.text=element_blank())
+
+ggsave(treg.p,
+       filename="~/Dropbox/Noise_FACS/TwinsUK/plot.dir/P2_Treg_gate.png",
+       height=2.75, width=2.75, dpi=300)
+
+treg.p 
+```
+
+
+
+```{r}
+##########################################
+# Exhausted T cells - CD45RA-CD45RO+PD1+ #
+##########################################
+# create a PD1 gate?
+
+# might need 4 different gates to get the two SP populations, then the DP and DN cells
+cd45ro.points <- c(7.5, 7.5, 11, 11, 7.5)
+pd1.points <- c(7.5, 11, 11, 7.5, 7.5)
+
+exhaust.gate <- polygonGate(filterId="Exhausted", .gate=cbind("V450-A"=pd1.points, "B515-A"=cd45ro.points))
+
+flowWorkspace::add(P2.gs, exhaust.gate, parent="/CD3/CD4")
+recompute(P2.gs)
+
+flowWorkspace::add(P2.gs, exhaust.gate, parent="/CD3/CD8")
+recompute(P2.gs)
+```
+
+
+```{r, fig.height=2.75, fig.width=2.75}
+#plot the remaining T cell markers
+exhaust.p <- ggcyto(P2.gs[1], aes(x=`V450-A`, y=`B515-A`), subset="/CD3/CD4") +
+  geom_hex(bins=128) +
+  lims(x=c(0, 12), y=c(0, 12)) +
+  geom_gate(exhaust.gate) +
+  theme_mike() +
+  labs(x="PD-1 BV421", y="CD45RO FITC") +
+  theme(strip.text=element_blank())
+
+ggsave(exhaust.p,
+       filename="~/Dropbox/Noise_FACS/TwinsUK/plot.dir/P2_exhausted_gate.png",
+       height=2.75, width=2.75, dpi=300)
+
+exhaust.p
+```
+
+
+
+```{r}
+# flush all the files out before the next panel
+sink(file="/dev/null")
+rm(list=ls())
+gc()
+sink(file=NULL)
+```
+
+
+### Panel 3
+
+```{r}
+## TwinsUK flow cytometry processing
+######################################
+### Panel 3 - Helper T cell subsets ##
+######################################
+
+source("~/Dropbox/R_sessions/SingleCellFunctions/single_cell_functions.R")
+source("~/Dropbox/R_sessions/GGMike/theme_mike.R")
+
+print("TwinsUK - Panel 3A")
+
+path.to.files <- "~/Dropbox/Noise_FACS/TwinsUK/FCS_files/"
+P3.flow.data <- read.flowSet(path=path.to.files,
+                             transformation=FALSE, pattern="P3")
+
+twin.ids <- unlist(lapply(strsplit(x=sampleNames(P3.flow.data), split=" ", fixed=TRUE),
+                          FUN=function(X) paste("Twin", X[1], X[2], sep="_")))
+sampleNames(P3.flow.data) <- twin.ids
+
+# select group A samples
+P3.flow.data <- P3.flow.data[1:10]
+
+# apply compensation
+comp.matrix <- keyword(P3.flow.data[[1]])$`$SPILLOVER`
+P3.flow.data <- compensate(P3.flow.data, spillover <- comp.matrix)
+
+# remove samples with < 1000 events recorded
+extract <- numeric(0)
+for(x in seq_len(length(P3.flow.data))){
+  events <- nrow(P3.flow.data[[x]])
+  if(events < 1000){
+    extract <- c(extract, x)
+  }
+}
+
+P3.fs_filt <- P3.flow.data[seq(along=P3.flow.data)]
+if(length(extract)){P3.fs_filt <- P3.fs_filt[-(extract),]}
+
+# remove channels that aren't interesting
+param.desc <-  pData(parameters(P3.flow.data[[1]]))[, "desc"]
+names(param.desc) <- colnames(P3.flow.data[[1]])
+param.desc[is.na(param.desc)] <- names(param.desc)[is.na(param.desc)]
+param.meta <- do.call(cbind.data.frame,
+                      list("Param"=names(param.desc),
+                           "Marker"=param.desc))
+
+# transform the data
+arcTrans <- arcsinhTransform()
+logTrans <- logTransform()
+biexpTrans <- biexponentialTransform()
+scaleTrans <- scaleTransform()
+logicleTrans <- logicleTransform()
+linearTrans <- linearTransform()
+
+# transform each paramter
+transform1 <- transformList("B515-A", biexpTrans)
+transform2 <- transformList("B710-A", biexpTrans)
+transform3 <- transformList("V450-A", biexpTrans)
+transform4 <- transformList("V545-A", biexpTrans)
+transform5 <- transformList("V565-A", biexpTrans)
+transform6 <- transformList("V585-A", biexpTrans)
+transform7 <- transformList("V605-A", biexpTrans)
+transform8 <- transformList("V655-A", biexpTrans)
+transform9 <- transformList("V705-A", biexpTrans)
+transform10 <- transformList("V800-A", biexpTrans)
+transform11 <- transformList("R660-A", biexpTrans)
+transform12 <- transformList("R710-A", biexpTrans)
+transform13 <- transformList("R780-A", biexpTrans)
+transform14 <- transformList("G560-A", biexpTrans)
+transform15 <- transformList("G610-A", biexpTrans)
+transform16 <- transformList("G660-A", biexpTrans)
+transform17 <- transformList("G710-A", biexpTrans)
+transform18 <- transformList("G780-A", biexpTrans)
+transformForwardH <- transformList("FSC-H", biexpTrans)
+transformSideA <- transformList("SSC-A", biexpTrans)
+transformForwardA <- transformList("FSC-A", biexpTrans)
+
+P3.fs_filt <- transform(P3.fs_filt, transform1)
+P3.fs_filt <- transform(P3.fs_filt, transform2)
+P3.fs_filt <- transform(P3.fs_filt, transform3)
+P3.fs_filt <- transform(P3.fs_filt, transform4)
+P3.fs_filt <- transform(P3.fs_filt, transform5)
+P3.fs_filt <- transform(P3.fs_filt, transform6)
+P3.fs_filt <- transform(P3.fs_filt, transform7)
+P3.fs_filt <- transform(P3.fs_filt, transform8)
+P3.fs_filt <- transform(P3.fs_filt, transform9)
+P3.fs_filt <- transform(P3.fs_filt, transform10)
+P3.fs_filt <- transform(P3.fs_filt, transform11)
+P3.fs_filt <- transform(P3.fs_filt, transform12)
+P3.fs_filt <- transform(P3.fs_filt, transform13)
+P3.fs_filt <- transform(P3.fs_filt, transform14)
+P3.fs_filt <- transform(P3.fs_filt, transform15)
+P3.fs_filt <- transform(P3.fs_filt, transform16)
+P3.fs_filt <- transform(P3.fs_filt, transform17)
+P3.fs_filt <- transform(P3.fs_filt, transform18)
+
+# P3.fs_filt <- transform(P3.fs_filt, transformForwardH)
+# P3.fs_filt <- transform(P3.fs_filt, transformSideA)
+# P3.fs_filt <- transform(P3.fs_filt, transformForwardA)
+
+# # gate on singlets
+# ggcyto(P3.fs_filt[1:6], aes(x=`FSC-A`, y=`FSC-H`)) +
+#   geom_hex(bins=128) +
+#   lims(x=c(35000, 2.7e5), y=c(35000, 2.7e5))
+
+# set up a singlets gate
+# setup forward and side scatter gates
+area.points <- c(3e4, 5e4, 2.3e5, 2.3e5, 3.5e4, 3.2e4)
+height.points <- c(3.2e4, 3.2e4, 2e5, 2.5e5, 5e4, 3.2e4)
+singlet.gate <- polygonGate(filterId="Singlet", .gate=cbind("FSC-A"=area.points, "FSC-H"=height.points))
+singlet.filter <- filter(P3.fs_filt, singlet.gate)
+singlet.gates <- lapply(singlet.filter, 
+                        function(res) filterDetails(res, "Singlet")$filter)
+```
+
+```{r, fig.height=2.75, fig.width=2.75}
+singlet.p <- ggcyto(P3.fs_filt[1], aes(x=`FSC-A`, y=`FSC-H`)) +
+  geom_hex(bins=128) +
+  lims(x=c(30000, 2.7e5), y=c(30000, 2.7e5)) +
+  theme_mike() +
+  geom_gate(singlet.gates) +
+  theme(strip.text=element_blank())
+
+ggsave(singlet.p,
+       filename="~/Dropbox/Noise_FACS/TwinsUK/plot.dir/P3_single_gate.png",
+       height=2.75, width=2.75, dpi=300)
+
+singlet.p
+```
+
+
+```{r}
+# subset all singlet cells before all other analyses
+P3.singlet <- Subset(P3.fs_filt, singlet.gate)
+
+# select live cells on Side scatter and AqBlue
+live.range <- rectangleGate(filterId="Live", list("V545-A"=c(0, 7.5)))
+live.filter <- filter(P3.singlet, live.range)
+live.gates <- lapply(live.filter, 
+                     function(res) filterDetails(res, "Live")$filter)
+```
+
+
+```{r, fig.width=2.75, fig.height=2.75}
+live.p <- ggcyto(P3.singlet[1], aes(x=`V545-A`, y=`SSC-A`)) +
+  geom_hex(bins=128)  +
+  geom_gate(live.gates) +
+  theme_mike() +
+  theme(strip.text=element_blank())
+
+ggsave(live.p,
+       filename="~/Dropbox/Noise_FACS/TwinsUK/plot.dir/P3_live_gate.png",
+       height=2.75, width=2.75, dpi=300)
+
+live.p
+```
+
+
+```{r}
+# subset all live cells before all other analyses
+P3.filter <- Subset(P3.singlet, live.range)
+
+# apply side and forward scatter transformations
+P3.filter <- transform(P3.filter, transformForwardH)
+P3.filter <- transform(P3.filter, transformSideA)
+P3.filter <- transform(P3.filter, transformForwardA)
+
+# ggcyto(P3.filter[1:6], aes(x=`SSC-A`, y=`FSC-A`)) +
+#   geom_hex(bins=128) 
+
+#################################################
+## need to align main parameters before gating ##
+#################################################
+### some parameters aren't being registered properly
+# might need to only select cells with values > 0
+
+# might need to split the parameters to get those with 2 peaks
+# properly aligned compare to those with shoulder peaks.
+# I may need to warp some parameters separately to others
+pars <- colnames(P3.filter)[4:21]
+P3.warping <- tryCatch({
+  second.warp <- c()
+  print(paste("Warping parameters: ", setdiff(pars, second.warp, sep=" ")))
+  warpSet(P3.filter, stains=setdiff(pars, second.warp))
+}, warning=function(war){
+  print(paste("MY_WARNING: ", war))
+  second.warp <- c()
+  return(warpSet(P3.filter, stains=setdiff(pars, second.warp)))
+}, error=function(err){
+  print(paste("MY_ERROR :", err))
+  # what should I do in the case of an error? try again?
+  second.warp <- c("V800-A")
+  P3.warping <- warpSet(P3.filter, stains=setdiff(pars, second.warp))
+  return(P3.warping)
+}, finally={
+  print(paste("Second warping parameters: ", second.warp, sep=" "))
+})
+
+if(length(second.warp)){
+  P3.warping <- warpSet(P3.warping, stains=pars, bwFac=3)
+}
+
+densityplot(x=~`G780-A`,
+            data=P3.warping[4:9],
+            channel=c("G780-A"))
+```
+
+```{r}
+#P3.warping <- warpSet(P3.warping, stains=second.warp, peakNr=2)
+# set up gating scheme using a GatingSet object
+P3.gs <- GatingSet(P3.warping)
+```
+
+```{r}
+# rm(list=c("P3.warping", "P3.flow.data", "P3.filter", "P3.singlet", 
+#           "P3.fs_filt"))
+# gc()
+
+# # plot Cd3 vs side scatter
+# ggcyto(P3.gs[1:6], aes(x=`SSC-A`, y=`G610-A`), subset="root") +
+#   geom_hex(bins=256) +
+#   lims(y=c(0, 12))
+
+# plot CD3 vs side scater to select T cells
+tcell.gate <- rectangleGate(filterId="CD3", list("R780-A"=c(5, 100)))
+flowWorkspace::add(P3.gs, tcell.gate, parent="root")
+recompute(P3.gs)
+```
+
+```{r, fig.width=2.75, fig.height=2.75}
+# # plot CD4 Vs CD8 to get major T cell subsets
+cd3.p <- ggcyto(P3.gs[1], aes(x=`SSC-A`, y=`R780-A`), subset="root") +
+  geom_hex(bins=256) +
+  geom_gate(tcell.gate) +
+  lims(x=c(0, 12), y=c(0, 12)) +
+  theme_mike() +
+  labs(x="SSC-A", y="CD3 Ax594") +
+  theme(strip.text=element_blank())
+
+ggsave(cd3.p,
+       filename="~/Dropbox/Noise_FACS/TwinsUK/plot.dir/P3_CD3_gate.png",
+       height=2.75, width=2.75, dpi=300)
+
+cd3.p
+```
+
+
+```{r}
+# might need 4 different gates to get the two SP populations, then the DP and DN cells
+cd8.points <- c(7, 12, 12, 7, 7)
+cd4.points <- c(2, 2, 9, 7.25, 2)
+cd8.gate <- polygonGate(filterId="CD8", .gate=cbind("V585-A"=cd8.points, "V800-A"=cd4.points))
+
+# might need 4 different gates to get the two SP populations, then the DP and DN cells
+cd8.points <- c(7, 7, 0, 0, 7)
+cd4.points <- c(6.5, 11, 11, 6.5, 6.5)
+cd4.gate <- polygonGate(filterId="CD4", .gate=cbind("V585-A"=cd8.points, "V800-A"=cd4.points))
+
+# might need 4 different gates to get the two SP populations, then the DP and DN cells
+cd8.points <- c(0, 7, 7, 0, 0)
+cd4.points <- c(0, 0, 6.5, 6.5, 0)
+DN.gate <- polygonGate(filterId="DN", .gate=cbind("V585-A"=cd8.points, "V800-A"=cd4.points))
+
+# might need 4 different gates to get the two SP populations, then the DP and DN cells
+cd8.points <- c(7, 12, 12, 7, 7)
+cd4.points <- c(7.25, 9, 11, 11, 7.25)
+DP.gate <- polygonGate(filterId="DP", .gate=cbind("V585-A"=cd8.points, "V800-A"=cd4.points))
+```
+
+
+```{r, fig.height=2.75, fig.width=2.75}
+# plot CD4 Vs CD8 to get major T cell subsets
+cd48.p <- ggcyto(P3.gs[1], aes(x=`V585-A`, y=`V800-A`), subset="CD3") +
+  geom_hex(bins=256) +
+  lims(x=c(0, 12), y=c(0, 12)) +
+  geom_gate(cd8.gate) +
+  geom_gate(cd4.gate) +
+  geom_gate(DN.gate) +
+  geom_gate(DP.gate) +
+  theme_mike() +
+  labs(x="CD8 QD585", y="CD4 QD800") +
+  theme(strip.text=element_blank())
+
+ggsave(cd48.p,
+       filename="~/Dropbox/Noise_FACS/TwinsUK/plot.dir/P3_Tcell_gate.png",
+       height=2.75, width=2.75, dpi=300)
+
+cd48.p
+```
+
+
+```{r}
+# add the T cell gates
+flowWorkspace::add(P3.gs, cd4.gate, parent="CD3")
+recompute(P3.gs)
+
+flowWorkspace::add(P3.gs, cd8.gate, parent="CD3")
+recompute(P3.gs)
+
+flowWorkspace::add(P3.gs, DN.gate, parent="CD3")
+recompute(P3.gs)
+
+flowWorkspace::add(P3.gs, DP.gate, parent="CD3")
+recompute(P3.gs)
+
+# T cell groups defined by this population:
+# split each in to naive and memory
+# TFH - CD4+CXCR5+
+# TH1 - CD4+CXCR3+
+# TH2 - CD4+CCR4+
+# TH9 - CD4+CCR4-CXCR3-CCR6-
+# TH17 - CD4+CCR6+CD161+
+# TH21 - ???
+# TH22 - CD4+CCR10+CCR4+CCR6+
+
+##########################################
+# Follicular helper T cells - CD4+CXCR5+ #
+##########################################
+# might need 4 different gates to get the two SP populations, then the DP and DN cells
+cxcr5.points <- c(5, 11, 11, 5, 5)
+cd4.points <- c(5, 5, 11, 11, 5)
+TFH.gate <- polygonGate(filterId="Tfh", .gate=cbind("R660-A"=cxcr5.points, "V800-A"=cd4.points))
+
+flowWorkspace::add(P3.gs, TFH.gate, parent="/CD3/CD4")
+recompute(P3.gs)
+```
+
+```{r, fig.height=2.75, fig.width=2.75  }
+# #plot the remaining T cell markers
+tfh.p <- ggcyto(P3.gs[1], aes(x=`R660-A`, y=`V800-A`), subset="/CD3/CD4") +
+  geom_hex(bins=128) +
+  lims(x=c(0, 12), y=c(0, 12)) +
+  geom_gate(TFH.gate) +
+  theme_mike() +
+  labs(x="CXCR5 Ax647", y="CD4 QD800") +
+  theme(strip.text=element_blank())
+
+ggsave(tfh.p,
+       filename="~/Dropbox/Noise_FACS/TwinsUK/plot.dir/P3_Tfh_gate.png",
+       height=2.75, width=2.75, dpi=300)
+
+tfh.p
+```
+
+
+```{r}
+############################
+# Th1 T cells - CD4+CXCR3+ #
+############################
+# might need 4 different gates to get the two SP populations, then the DP and DN cells
+cxcr3.points <- c(5, 11, 11, 5, 5)
+cd4.points <- c(4, 4, 11, 11, 4)
+TH1.gate <- polygonGate(filterId="Th1", .gate=cbind("G660-A"=cxcr3.points, "V800-A"=cd4.points))
+
+flowWorkspace::add(P3.gs, TH1.gate, parent="/CD3/CD4")
+recompute(P3.gs)
+```
+
+
+```{r, fig.height=2.75, fig.width=2.75  }
+# #plot the remaining T cell markers
+th1.p <- ggcyto(P3.gs[1], aes(x=`G660-A`, y=`V800-A`), subset="/CD3/CD4") +
+  geom_hex(bins=128) +
+  lims(x=c(0, 12), y=c(0, 12)) +
+  geom_gate(TH1.gate) +
+  theme_mike() +
+  labs(x="CXCR3 Cy5PE", y="CD4 QD800") +
+  theme(strip.text=element_blank())
+
+ggsave(th1.p,
+       filename="~/Dropbox/Noise_FACS/TwinsUK/plot.dir/P3_Th1_gate.png",
+       height=2.75, width=2.75, dpi=300)
+
+th1.p
+```
+
+
+```{r}
+############################
+# Th2 T cells - CD4+CCR4+ #
+############################
+# might need 4 different gates to get the two SP populations, then the DP and DN cells
+ccr4.points <- c(8, 13, 13, 8, 8)
+cd4.points <- c(0, 0, 10, 10, 0)
+TH2.gate <- polygonGate(filterId="Th2", .gate=cbind("G780-A"=ccr4.points, "V800-A"=cd4.points))
+
+flowWorkspace::add(P3.gs, TH2.gate, parent="/CD3/CD4")
+recompute(P3.gs)
+```
+
+
+```{r, fig.height=2.75, fig.width=2.75  }
+# #plot the remaining T cell markers
+th2.p <- ggcyto(P3.gs[1], aes(x=`G780-A`, y=`V800-A`), subset="/CD3/CD4") +
+  geom_hex(bins=128) +
+  lims(x=c(0, 12), y=c(0, 12)) +
+  geom_gate(TH2.gate) +
+  theme_mike() +
+  labs(x="CCR4 Cy7PE", y="CD4 QD800") +
+  theme(strip.text=element_blank())
+
+ggsave(th2.p,
+       filename="~/Dropbox/Noise_FACS/TwinsUK/plot.dir/P3_Th2_gate.png",
+       height=2.75, width=2.75, dpi=300)
+
+th2.p
+```
+
+
+```{r}
+######################################
+# Th9 T cells - CD4+CCR4-CXCR3-CCR6- #
+######################################
+# might need 4 different gates to get the two SP populations, then the DP and DN cells
+ccr4.points <- c(0, 8, 8, 0, 0)
+cxcr3.points <- c(0, 0, 5, 5, 0)
+ccr4.cxcr3.gate <- polygonGate(filterId="CCR4negCXCR3neg", .gate=cbind("G780-A"=ccr4.points, "G660-A"=cxcr3.points))
+flowWorkspace::add(P3.gs, ccr4.cxcr3.gate, parent="/CD3/CD4")
+recompute(P3.gs)
+
+ccr4.points <- c(0, 8, 8, 0, 0)
+ccr6.points <- c(0, 0, 5, 5, 0)
+TH9.gate <- polygonGate(filterId="Th9", .gate=cbind("G780-A"=ccr4.points, "V605-A"=ccr6.points))
+flowWorkspace::add(P3.gs, TH9.gate, parent="/CD3/CD4/CCR4negCXCR3neg")
+recompute(P3.gs)
+```
+
+```{r, fig.height=2.75, fig.width=2.75  }
+# #plot the remaining T cell markers
+ccrneg.p <- ggcyto(P3.gs[1], aes(x=`G780-A`, y=`G660-A`), subset="/CD3/CD4") +
+  geom_hex(bins=64) +
+  lims(x=c(0, 12), y=c(0, 12)) +
+  geom_gate(ccr4.cxcr3.gate) +
+  theme_mike() +
+  labs(x="CCR4 Cy7PE", y="CXCR3 Cy5PE") +
+  theme(strip.text=element_blank())
+
+ggsave(ccrneg.p,
+       filename="~/Dropbox/Noise_FACS/TwinsUK/plot.dir/P3_CCRneg_gate.png",
+       height=2.75, width=2.75, dpi=300)
+
+ccrneg.p
+```
+
+```{r, fig.height=2.75, fig.width=2.75  }
+# #plot the remaining T cell markers
+th9.p <- ggcyto(P3.gs[1], aes(x=`G780-A`, y=`V605-A`), subset="/CD3/CD4/CCR4negCXCR3neg") +
+  geom_hex(bins=64) +
+  lims(x=c(0, 12), y=c(0, 12)) +
+  geom_gate(TH9.gate) +
+  theme_mike() +
+  labs(x="CCR4 Cy7PE", y="CCR6 BV605") +
+  theme(strip.text=element_blank())
+
+ggsave(th9.p,
+       filename="~/Dropbox/Noise_FACS/TwinsUK/plot.dir/P3_Th9_gate.png",
+       height=2.75, width=2.75, dpi=300)
+
+th9.p
+```
+
+
+```{r}
+##################################
+# Th17 T cells - CD4+CCR6+CD161+ #
+##################################
+# might need 4 different gates to get the two SP populations, then the DP and DN cells
+ccr6.points <- c(7.75, 11, 11, 7.75, 7.75)
+cd161.points <- c(6.5, 6.5, 11, 11, 6.5)
+TH17.gate <- polygonGate(filterId="Th17", .gate=cbind("V605-A"=ccr6.points, "B515-A"=cd161.points))
+
+flowWorkspace::add(P3.gs, TH17.gate, parent="/CD3/CD4")
+recompute(P3.gs)
+```
+
+
+```{r, fig.height=2.75, fig.width=2.75  }
+# #plot the remaining T cell markers
+th17.p <- ggcyto(P3.gs[1], aes(x=`V605-A`, y=`B515-A`), subset="/CD3/CD4") +
+  geom_hex(bins=128) +
+  lims(x=c(0, 12), y=c(0, 12)) +
+  geom_gate(TH17.gate) +
+  theme_mike() +
+  labs(x="CCR6 BV605", y="CD161 FITC") +
+  theme(strip.text=element_blank())
+
+ggsave(th17.p,
+       filename="~/Dropbox/Noise_FACS/TwinsUK/plot.dir/P3_Th17_gate.png",
+       height=2.75, width=2.75, dpi=300)
+
+th17.p
+```
+
+
+```{r}
+#######################################
+# Th22 T cells - CD4+CCR10+CCR4+CCR6+ #
+#######################################
+# create CCR4+CCR6+ gate
+# might need 4 different gates to get the two SP populations, then the DP and DN cells
+ccr4.points <- c(8.5, 8.5, 12, 12, 8.5)
+ccr10.points <- c(5.5, 11, 11, 5.5, 5.5)
+TH22.gate <- polygonGate(filterId="Th22", .gate=cbind("G780-A"=ccr4.points, "G560-A"=ccr10.points))
+
+flowWorkspace::add(P3.gs, TH22.gate, parent="/CD3/CD4")
+recompute(P3.gs)
+```
+
+
+
+
+```{r, fig.height=2.75, fig.width=2.75  }
+# #plot the remaining T cell markers
+th22.p <- ggcyto(P3.gs[1], aes(x=`G780-A`, y=`G560-A`), subset="/CD3/CD4") +
+  geom_hex(bins=128) +
+  lims(x=c(0, 12), y=c(0, 12)) +
+  geom_gate(TH22.gate) +
+  theme_mike() +
+  labs(x="CCR4 Cy7PE", y="CCR10 PE") +
+  theme(strip.text=element_blank())
+
+ggsave(th22.p,
+       filename="~/Dropbox/Noise_FACS/TwinsUK/plot.dir/P3_Th22_gate.png",
+       height=2.75, width=2.75, dpi=300)
+
+th22.p
+```
+
+```{r}
+# flush all the files out before the next panel
+sink(file="/dev/null")
+rm(list=ls())
+gc()
+sink(file=NULL)
+```
+
+
+### Panel 4
+
+
+```{r}
+print("TwinsUK - Panel 4A")
+source("~/Dropbox/R_sessions/SingleCellFunctions/single_cell_functions.R")
+source("~/Dropbox/R_sessions/GGMike/theme_mike.R")
+
+path.to.files <- "~/Dropbox/Noise_FACS/TwinsUK/FCS_files/"
+
+P4.flow.data <- read.flowSet(path=path.to.files,
+                             transformation=FALSE, pattern="P4")
+
+twin.ids <- unlist(lapply(strsplit(x=sampleNames(P4.flow.data), split=" ", fixed=TRUE),
+                          FUN=function(X) paste("Twin", X[1], X[2], sep="_")))
+sampleNames(P4.flow.data) <- twin.ids
+
+# select samples from group A
+P4.flow.data <- P4.flow.data[1:10]
+
+# apply compensation
+comp.matrix <- keyword(P4.flow.data[[1]])$`$SPILLOVER`
+P4.flow.data <- compensate(P4.flow.data, spillover <- comp.matrix)
+
+# remove samples with < 1000 events recorded
+extract <- numeric(0)
+for(x in seq_len(length(P4.flow.data))){
+  events <- nrow(P4.flow.data[[x]])
+  if(events < 1000){
+    extract <- c(extract, x)
+  }
+}
+
+P4.fs_filt <- P4.flow.data[seq(along=P4.flow.data)]
+if(length(extract)){P4.fs_filt <- P4.fs_filt[-(extract),]}
+
+# remove channels that aren't interesting
+param.desc <-  pData(parameters(P4.flow.data[[1]]))[, "desc"]
+names(param.desc) <- colnames(P4.flow.data[[1]])
+param.desc[is.na(param.desc)] <- names(param.desc)[is.na(param.desc)]
+param.meta <- do.call(cbind.data.frame,
+                      list("Param"=names(param.desc),
+                           "Marker"=param.desc))
+
+# transform the data
+biexpTrans <- biexponentialTransform()
+
+# transform each paramter
+transform1 <- transformList("B515-A", biexpTrans)
+transform2 <- transformList("B710-A", biexpTrans)
+transform3 <- transformList("V450-A", biexpTrans)
+transform4 <- transformList("V545-A", biexpTrans)
+transform5 <- transformList("V565-A", biexpTrans)
+transform6 <- transformList("V585-A", biexpTrans)
+transform7 <- transformList("V605-A", biexpTrans)
+transform8 <- transformList("V655-A", biexpTrans)
+transform9 <- transformList("V705-A", biexpTrans)
+transform10 <- transformList("V800-A", biexpTrans)
+transform11 <- transformList("R660-A", biexpTrans)
+transform12 <- transformList("R710-A", biexpTrans)
+transform13 <- transformList("R780-A", biexpTrans)
+transform14 <- transformList("G560-A", biexpTrans)
+transform15 <- transformList("G610-A", biexpTrans)
+transform16 <- transformList("G660-A", biexpTrans)
+transform17 <- transformList("G710-A", biexpTrans)
+transform18 <- transformList("G780-A", biexpTrans)
+transformForwardH <- transformList("FSC-H", biexpTrans)
+transformSideA <- transformList("SSC-A", biexpTrans)
+transformForwardA <- transformList("FSC-A", biexpTrans)
+
+P4.fs_filt <- transform(P4.fs_filt, transform1)
+P4.fs_filt <- transform(P4.fs_filt, transform2)
+P4.fs_filt <- transform(P4.fs_filt, transform3)
+P4.fs_filt <- transform(P4.fs_filt, transform4)
+P4.fs_filt <- transform(P4.fs_filt, transform5)
+P4.fs_filt <- transform(P4.fs_filt, transform6)
+P4.fs_filt <- transform(P4.fs_filt, transform7)
+P4.fs_filt <- transform(P4.fs_filt, transform8)
+P4.fs_filt <- transform(P4.fs_filt, transform9)
+P4.fs_filt <- transform(P4.fs_filt, transform10)
+P4.fs_filt <- transform(P4.fs_filt, transform11)
+P4.fs_filt <- transform(P4.fs_filt, transform12)
+P4.fs_filt <- transform(P4.fs_filt, transform13)
+P4.fs_filt <- transform(P4.fs_filt, transform14)
+P4.fs_filt <- transform(P4.fs_filt, transform15)
+P4.fs_filt <- transform(P4.fs_filt, transform16)
+P4.fs_filt <- transform(P4.fs_filt, transform17)
+P4.fs_filt <- transform(P4.fs_filt, transform18)
+
+# P4.fs_filt <- transform(P4.fs_filt, transformForwardH)
+# P4.fs_filt <- transform(P4.fs_filt, transformSideA)
+# P4.fs_filt <- transform(P4.fs_filt, transformForwardA)
+
+# # gate on singlets
+# ggcyto(P4.fs_filt[1:6], aes(x=`FSC-A`, y=`FSC-H`)) +
+#   geom_hex(bins=128) +
+#   lims(x=c(35000, 2.7e5), y=c(35000, 2.7e5))
+
+# set up a singlets gate
+# setup forward and side scatter gates
+area.points <- c(3e4, 5e4, 2.3e5, 2.3e5, 3.5e4, 3.2e4)
+height.points <- c(3.2e4, 3.2e4, 2e5, 2.5e5, 5e4, 3.2e4)
+singlet.gate <- polygonGate(filterId="Singlet", .gate=cbind("FSC-A"=area.points, "FSC-H"=height.points))
+singlet.filter <- filter(P4.fs_filt, singlet.gate)
+singlet.gates <- lapply(singlet.filter, 
+                        function(res) filterDetails(res, "Singlet")$filter)
+```
+
+```{r, fig.height=2.75, fig.width=2.75}
+singlet.p <- ggcyto(P4.fs_filt[1], aes(x=`FSC-A`, y=`FSC-H`)) +
+  geom_hex(bins=128) +
+  lims(x=c(30000, 2.7e5), y=c(30000, 2.7e5)) +
+  geom_gate(singlet.gates) +
+  theme_mike() +
+  theme(strip.text=element_blank())
+
+ggsave(singlet.p,
+       filename="~/Dropbox/Noise_FACS/TwinsUK/plot.dir/P4_singlet.png",
+       height=2.75, width=2.75, dpi=300)
+
+singlet.p
+```
+
+```{r}
+# subset all singlet cells before all other analyses
+P4.singlet <- Subset(P4.fs_filt, singlet.gate)
+
+# select live cells on Side scatter and AqBlue
+live.range <- rectangleGate(filterId="Live", list("V545-A"=c(0, 7.5)))
+live.filter <- filter(P4.singlet, live.range)
+live.gates <- lapply(live.filter, 
+                     function(res) filterDetails(res, "Live")$filter)
+```
+
+
+```{r, fig.height=2.75, fig.width=2.75}
+live.p <- ggcyto(P4.singlet[1], aes(x=`V545-A`, y=`SSC-A`)) +
+  geom_hex(bins=128)  +
+  geom_gate(live.gates)+
+  theme_mike() +
+  theme(strip.text=element_blank())
+
+ggsave(live.p,
+       filename="~/Dropbox/Noise_FACS/TwinsUK/plot.dir/P4_live.png",
+       height=2.75, width=2.75, dpi=300)
+
+live.p
+```
+
+
+```{r}
+# subset all live cells before all other analyses
+P4.filter <- Subset(P4.singlet, live.range)
+
+# apply side and forward scatter transformations
+P4.filter <- transform(P4.filter, transformForwardH)
+P4.filter <- transform(P4.filter, transformSideA)
+P4.filter <- transform(P4.filter, transformForwardA)
+
+# ggcyto(P4.filter[1:6], aes(x=`SSC-A`, y=`FSC-A`)) +
+#   geom_hex(bins=128) 
+
+#################################################
+## need to align main parameters before gating ##
+#################################################
+### some parameters aren't being registered properly
+# might need to only select cells with values > 0
+
+# might need to split the parameters to get those with 2 peaks
+# properly aligned compare to those with shoulder peaks.
+# I may need to warp some parameters separately to others
+# densityplot(x=~`G780-A`,
+#             data=P4.filter[4:9],
+#             channel=c("G780-A"))
+
+pars <- colnames(P4.filter)[4:21]
+P4.warping <- warpSet(P4.filter, stains=pars)
+#P4.warping <- warpSet(P4.warping, stains=second.warp, peakNr=2)
+```
+
+
+```{r}
+# set up gating scheme using a GatingSet object
+P4.gs <- GatingSet(P4.warping)
+```
+
+```{r}
+# rm(list=c("P4.warping", "P4.flow.data", "P4.filter", "P4.singlet", 
+#           "P4.fs_filt"))
+# gc()
+```
+
+
+```{r}
+# plot CD3 vs side scater to select T cells
+nk.gate <- rectangleGate(filterId="CD3neg", list("R780-A"=c(0, 5)))
+flowWorkspace::add(P4.gs, nk.gate, parent="root")
+recompute(P4.gs)
+
+# NK cell groups defined by this population:
+# split each in to naive and memory
+# Early NK - CD56+CD16-
+# Mature NK - CD56+CD16+
+# Terminal NK - CD56-CD16+
+```
+
+
+```{r, fig.height=2.75, fig.width=2.75}
+# # # plot Cd3 vs side scatter
+cd3.p <- ggcyto(P4.gs[1], aes(x=`SSC-A`, y=`R780-A`), subset="root") +
+  geom_hex(bins=256) +
+  lims(y=c(0, 12)) +
+  geom_gate(nk.gate) +
+  labs(x="SSC-A", y="CD3 H7 APC") +
+  theme_mike() +
+  theme(strip.text=element_blank())
+
+ggsave(cd3.p,
+       filename="~/Dropbox/Noise_FACS/TwinsUK/plot.dir/P4_CD3_gate.png",
+       height=2.75, width=2.75, dpi=300)
+
+cd3.p
+```
+
+```{r}
+
+############################
+# Early NK cells CD56+CD16-#
+############################
+# might need 4 different gates to get the two SP populations, then the DP and DN cells
+cd56.points <- c(7.5, 12, 12, 7.5, 7.5)
+cd16.points <- c(0, 0, 6.5, 6.5, 0)
+Early.gate <- polygonGate(filterId="EarlyNK", .gate=cbind("V450-A"=cd16.points, "V585-A"=cd56.points))
+
+flowWorkspace::add(P4.gs, Early.gate, parent="/CD3neg")
+recompute(P4.gs)
+```
+
+
+```{r}
+#############################
+# Mature NK cells CD56+CD16+#
+#############################
+# might need 4 different gates to get the two SP populations, then the DP and DN cells
+cd56.points <- c(6, 8, 9, 9.5, 8.5, 7.75, 6, 5, 6)
+cd16.points <- c(7.5, 7.5, 9, 13.5, 13.5, 13, 9.5, 8)
+Mature.gate <- polygonGate(filterId="MatureNK", .gate=cbind("V450-A"=cd16.points, "V585-A"=cd56.points))
+
+flowWorkspace::add(P4.gs, Mature.gate, parent="/CD3neg")
+recompute(P4.gs)
+```
+
+
+```{r}
+#################################
+# Terminal NK cells CD56dimCD16+#
+#################################
+# might need 4 different gates to get the two SP populations, then the DP and DN cells
+cd56.points <- c(5, 6, 8, 4.5, 2.5, 2.5, 5)
+cd16.points <- c(8, 9.5, 13.5, 13.5, 13.5, 8, 8)
+Terminal.gate <- polygonGate(filterId="TerminalNK", .gate=cbind("V450-A"=cd16.points, "V585-A"=cd56.points))
+
+flowWorkspace::add(P4.gs, Terminal.gate, parent="/CD3neg")
+recompute(P4.gs)
+```
+
+
+```{r, fig.height=2.75, fig.width=2.75}
+nk.p <- ggcyto(P4.gs[4], aes(x=`V585-A`, y=`V450-A`), subset="/CD3neg") +
+  geom_hex(bins=128) +
+  lims(x=c(0, 12), y=c(0, 12)) +
+  geom_gate(Early.gate) +
+  geom_gate(Mature.gate) +
+  geom_gate(Terminal.gate) +
+  labs(x="CD56 BV570", y="CD16 BV421") +
+  theme_mike() +
+  theme(strip.text=element_blank())
+
+ggsave(nk.p,
+       filename="~/Dropbox/Noise_FACS/TwinsUK/plot.dir/P4_NK_Gate.png",
+       height=2.75, width=2.75, dpi=300)
+
+nk.p
+```
+
+
+```{r}
+# # flush all the files out before the next panel
+# sink(file="/dev/null")
+# rm(list=ls())
+# gc()
+# sink(file=NULL)
+```
+
+
+## Panel 5
+
+```{r}
+print("TwinsUK Panel 5A")
+path.to.files <- "~/Dropbox/Noise_FACS/TwinsUK/FCS_files/"
+P5.flow.data <- read.flowSet(path=path.to.files,
+                             transformation=FALSE, pattern="P5")
+
+twin.ids <- unlist(lapply(strsplit(x=sampleNames(P5.flow.data), split=" ", fixed=TRUE),
+                          FUN=function(X) paste("Twin", X[1], X[2], sep="_")))
+sampleNames(P5.flow.data) <- twin.ids
+
+# select samples from group A
+P5.flow.data <- P5.flow.data[1:10]
+
+# apply compensation
+comp.matrix <- keyword(P5.flow.data[[1]])$`$SPILLOVER`
+P5.flow.data <- compensate(P5.flow.data, spillover <- comp.matrix)
+
+# remove samples with < 1000 events recorded
+extract <- numeric(0)
+for(x in seq_len(length(P5.flow.data))){
+  events <- nrow(P5.flow.data[[x]])
+  if(events < 1000){
+    extract <- c(extract, x)
+  }
+}
+
+P5.fs_filt <- P5.flow.data[seq(along=P5.flow.data)]
+if(length(extract)){P5.fs_filt <- P5.fs_filt[-(extract),]}
+
+# remove channels that aren't interesting
+param.desc <-  pData(parameters(P5.flow.data[[1]]))[, "desc"]
+names(param.desc) <- colnames(P5.flow.data[[1]])
+param.desc[is.na(param.desc)] <- names(param.desc)[is.na(param.desc)]
+param.meta <- do.call(cbind.data.frame,
+                      list("Param"=names(param.desc),
+                           "Marker"=param.desc))
+
+# transform the data
+arcTrans <- arcsinhTransform()
+logTrans <- logTransform()
+biexpTrans <- biexponentialTransform()
+scaleTrans <- scaleTransform()
+logicleTrans <- logicleTransform()
+linearTrans <- linearTransform()
+
+# transform each paramter
+transform1 <- transformList("B515-A", biexpTrans)
+transform2 <- transformList("B710-A", biexpTrans)
+transform3 <- transformList("V450-A", biexpTrans)
+transform4 <- transformList("V545-A", biexpTrans)
+transform5 <- transformList("V565-A", biexpTrans)
+transform6 <- transformList("V585-A", biexpTrans)
+transform7 <- transformList("V605-A", biexpTrans)
+transform8 <- transformList("V655-A", biexpTrans)
+transform9 <- transformList("V705-A", biexpTrans)
+transform10 <- transformList("V800-A", biexpTrans)
+transform11 <- transformList("R660-A", biexpTrans)
+transform12 <- transformList("R710-A", biexpTrans)
+transform13 <- transformList("R780-A", biexpTrans)
+transform14 <- transformList("G560-A", biexpTrans)
+transform15 <- transformList("G610-A", biexpTrans)
+transform16 <- transformList("G660-A", biexpTrans)
+transform17 <- transformList("G710-A", biexpTrans)
+transform18 <- transformList("G780-A", biexpTrans)
+transformForwardH <- transformList("FSC-H", biexpTrans)
+transformSideA <- transformList("SSC-A", biexpTrans)
+transformForwardA <- transformList("FSC-A", biexpTrans)
+
+P5.fs_filt <- transform(P5.fs_filt, transform1)
+P5.fs_filt <- transform(P5.fs_filt, transform2)
+P5.fs_filt <- transform(P5.fs_filt, transform3)
+P5.fs_filt <- transform(P5.fs_filt, transform4)
+P5.fs_filt <- transform(P5.fs_filt, transform5)
+P5.fs_filt <- transform(P5.fs_filt, transform6)
+P5.fs_filt <- transform(P5.fs_filt, transform7)
+P5.fs_filt <- transform(P5.fs_filt, transform8)
+P5.fs_filt <- transform(P5.fs_filt, transform9)
+P5.fs_filt <- transform(P5.fs_filt, transform10)
+P5.fs_filt <- transform(P5.fs_filt, transform11)
+P5.fs_filt <- transform(P5.fs_filt, transform12)
+P5.fs_filt <- transform(P5.fs_filt, transform13)
+P5.fs_filt <- transform(P5.fs_filt, transform14)
+P5.fs_filt <- transform(P5.fs_filt, transform15)
+P5.fs_filt <- transform(P5.fs_filt, transform16)
+P5.fs_filt <- transform(P5.fs_filt, transform17)
+P5.fs_filt <- transform(P5.fs_filt, transform18)
+
+# P5.fs_filt <- transform(P5.fs_filt, transformForwardH)
+# P5.fs_filt <- transform(P5.fs_filt, transformSideA)
+# P5.fs_filt <- transform(P5.fs_filt, transformForwardA)
+```
+
+```{r}
+# # gate on singlets
+# ggcyto(P5.fs_filt[1:6], aes(x=`FSC-A`, y=`FSC-H`)) +
+#   geom_hex(bins=128) +
+#   lims(x=c(35000, 2.7e5), y=c(35000, 2.7e5))
+
+# set up a singlets gate
+# setup forward and side scatter gates
+area.points <- c(3e4, 5e4, 2.3e5, 2.3e5, 3.5e4, 3.2e4)
+height.points <- c(3.2e4, 3.2e4, 2e5, 2.5e5, 5e4, 3.2e4)
+singlet.gate <- polygonGate(filterId="Singlet", .gate=cbind("FSC-A"=area.points, "FSC-H"=height.points))
+singlet.filter <- filter(P5.fs_filt, singlet.gate)
+singlet.gates <- lapply(singlet.filter, 
+                        function(res) filterDetails(res, "Singlet")$filter)
+```
+
+
+
+```{r, fig.height=2.75, fig.width=2.75}
+singlet.p <- ggcyto(P5.fs_filt[1], aes(x=`FSC-A`, y=`FSC-H`)) +
+  geom_hex(bins=128) +
+  lims(x=c(30000, 2.7e5), y=c(30000, 2.7e5)) +
+  geom_gate(singlet.gates) +
+  theme_mike() +
+  theme(strip.text=element_blank())
+
+ggsave(singlet.p,
+       filename="~/Dropbox/Noise_FACS/TwinsUK/plot.dir/P5_singlet.png",
+       height=2.75, width=2.75, dpi=300)
+
+singlet.p
+```
+
+
+```{r}
+# subset all singlet cells before all other analyses
+P5.singlet <- Subset(P5.fs_filt, singlet.gate)
+
+# select live cells on Side scatter and AqBlue
+live.range <- rectangleGate(filterId="Live", list("V545-A"=c(0, 7.5)))
+live.filter <- filter(P5.singlet, live.range)
+live.gates <- lapply(live.filter, 
+                     function(res) filterDetails(res, "Live")$filter)
+```
+
+
+```{r, fig.height=2.75, fig.width=2.75}
+live.p <- ggcyto(P5.singlet[1], aes(x=`V545-A`, y=`SSC-A`)) +
+  geom_hex(bins=128)  +
+  geom_gate(live.gates)+
+  theme_mike() +
+  theme(strip.text=element_blank())
+
+ggsave(live.p,
+       filename="~/Dropbox/Noise_FACS/TwinsUK/plot.dir/P5_live.png",
+       height=2.75, width=2.75, dpi=300)
+
+live.p
+```
+
+
+```{r}
+# subset all live cells before all other analyses
+P5.filter <- Subset(P5.singlet, live.range)
+
+# apply side and forward scatter transformations
+P5.filter <- transform(P5.filter, transformForwardH)
+P5.filter <- transform(P5.filter, transformSideA)
+P5.filter <- transform(P5.filter, transformForwardA)
+
+# ggcyto(P5.filter[1:6], aes(x=`SSC-A`, y=`FSC-A`)) +
+#   geom_hex(bins=128) 
+
+#################################################
+## need to align main parameters before gating ##
+#################################################
+### some parameters aren't being registered properly
+# might need to only select cells with values > 0
+
+# might need to split the parameters to get those with 2 peaks
+# properly aligned compare to those with shoulder peaks.
+# I may need to warp some parameters separately to others
+# densityplot(x=~`G560-A`,
+#             data=P5.warping[4:9],
+#             channel=c("G560-A"))
+
+pars <- colnames(P5.filter)[4:21]
+second.warp <- c("G560-A")
+first.warp <- pars[!pars %in% second.warp]
+P5.warping <- warpSet(P5.filter, stains=first.warp)
+P5.warping <- warpSet(P5.warping, stains=second.warp, peakNr=2)
+
+# densityplot(x=~`G560-A`,
+#             data=P5.warping[4:9],
+#             channel=c("G560-A"))
+
+# set up gating scheme using a GatingSet object
+P5.gs <- GatingSet(P5.warping)
+
+# rm(list=c("P5.warping", "P5.flow.data", "P5.filter", "P5.singlet", 
+#           "P5.fs_filt"))
+# gc()
+
+# densityplot(x=~`G710-A`,
+#             data=P5.warping[4:9],
+#             channel=c("G710-A"))
+```
+
+```{r}
+# # plot Cd3 vs forward scatter
+# ggcyto(P5.gs[4:9], aes(x=`FSC-A`, y=`V800-A`), subset="root") +
+#   geom_hex(bins=256) +
+#   lims(y=c(0, 12))
+
+# plot CD3 vs side scater to select T cells
+tcell.gate <- rectangleGate(filterId="CD3", list("V800-A"=c(7.5, 100)))
+flowWorkspace::add(P5.gs, tcell.gate, parent="root")
+recompute(P5.gs)
+```
+
+```{r, fig.height=2.75, fig.width=2.75}
+tcell.p <- ggcyto(P5.gs[1], aes(x=`FSC-A`, y=`V800-A`), subset="root") +
+  geom_hex(bins=256) +
+  geom_gate(tcell.gate) +
+  theme_mike() +
+  labs(x="FSC-A", y="CD3 BV785") +
+  theme(strip.text=element_blank()) +
+  lims(y=c(0, 12))
+
+ggsave(tcell.p,
+       filename="~/Dropbox/Noise_FACS/TwinsUK/plot.dir/P5_CD3_gate.png",
+       height=2.75, width=2.75, dpi=300)
+
+tcell.p
+```
+
+
+```{r}
+# gamma-delta, HSC and NKT cell groups defined by this panel:
+# HSC - CD3-CD34++
+# Naive NKT cell - CD3+CD1d+CD4+CCR5-
+# Early NKT cell - CD3+CD1d+CD4+CCR5+
+# Effector NKT cell - CD3+CD1d+CD4-CD8-
+# Terminal NKT cell - CD3+CD1d+CD4-CD8+
+# Vd1+ gamma-delta T cell - CD3+CD1d+TCR_Vd1+TCR_Vd2-
+# Vd2+Vg9dim gamma-delta T cell - CD3+CD1d+TCR_Vd1-TCR_Vg9+TCR_Vd2+
+# Vd2-Vg9+ gamma-delta T cell - CD3+CD1d+TCR_Vd1-TCR_Vg9dimTCR_Vd2-
+
+###################
+# HSCs CD3-CD34++ #
+###################
+cd3.points <- c(5, 5, 9, 9, 5)
+cd34.points <- c(8, 12, 12, 8, 8)
+HSC.gate <- polygonGate(filterId="HSC", .gate=cbind("V800-A"=cd3.points, "V450-A"=cd34.points))
+
+flowWorkspace::add(P5.gs, HSC.gate, parent="root")
+recompute(P5.gs)
+```
+
+
+```{r, fig.height=2.75, fig.width=2.75}
+hsc.p <- ggcyto(P5.gs[1], aes(x=`V450-A`, y=`V800-A`), subset="root") +
+  geom_hex(bins=256) +
+  geom_gate(HSC.gate) +
+  theme_mike() +
+  labs(x="CD34 BV421", y="CD3 BV785") +
+  theme(strip.text=element_blank()) +
+  lims(y=c(0, 12))
+
+ggsave(hsc.p,
+       filename="~/Dropbox/Noise_FACS/TwinsUK/plot.dir/P5_HSC_gate.png",
+       height=2.75, width=2.75, dpi=300)
+
+hsc.p
+```
+
+
+
+```{r}
+#################################
+## Create a gate for NKT cells ##
+#################################
+cd3.points <- c(5, 5, 12, 12, 5)
+cd1d.points <- c(8, 12, 12, 8, 8)
+NKT.gate <- polygonGate(filterId="NKT", .gate=cbind("V800-A"=cd3.points, "G560-A"=cd1d.points))
+
+flowWorkspace::add(P5.gs, NKT.gate, parent="/CD3")
+recompute(P5.gs)
+```
+
+
+```{r, fig.height=2.75, fig.width=2.75}
+nkt.p <- ggcyto(P5.gs[1], aes(x=`G560-A`, y=`V800-A`), subset="/CD3") +
+  geom_hex(bins=128) +
+  geom_gate(NKT.gate) +
+  theme_mike() +
+  labs(x="CD1-multi PE", y="CD3 BV785") +
+  theme(strip.text=element_blank()) +
+  lims(x=c(0, 12), y=c(0, 12))
+
+ggsave(nkt.p,
+       filename="~/Dropbox/Noise_FACS/TwinsUK/plot.dir/P5_NKT_gate.png",
+       height=2.75, width=2.75, dpi=300)
+
+nkt.p
+```
+
+```{r}
+######################################
+# Naive NKT cells CD3+CD1d+CD4+CCR5- #
+######################################
+cd4.points <- c(7, 7, 12, 12, 7)
+ccr5.points <- c(0, 5, 5, 0, 0)
+naiveNKT.gate <- polygonGate(filterId="Naive", .gate=cbind("V605-A"=cd4.points, "R780-A"=ccr5.points))
+
+flowWorkspace::add(P5.gs, naiveNKT.gate, parent="/CD3/NKT")
+recompute(P5.gs)
+```
+
+
+```{r, fig.height=2.75, fig.width=2.75}
+naivenkt.p <- ggcyto(P5.gs[1], aes(x=`V605-A`, y=`R780-A`), subset="/CD3/NKT") +
+  geom_hex(bins=128) +
+  geom_gate(naiveNKT.gate) +
+  theme_mike() +
+  labs(x="CD4 BV605", y="CCR5 Cy7 PE") +
+  theme(strip.text=element_blank()) +
+  lims(x=c(0, 12), y=c(0, 12))
+
+ggsave(naivenkt.p,
+       filename="~/Dropbox/Noise_FACS/TwinsUK/plot.dir/P5_naiveNKT_gate.png",
+       height=2.75, width=2.75, dpi=300)
+
+naivenkt.p
+```
+
+
+```{r}
+######################################
+# Early NKT cells CD3+CD1d+CD4+CCR5+ #
+######################################
+cd4.points <- c(7, 7, 12, 12, 7)
+ccr5.points <- c(5, 12, 12, 5, 5)
+earlyNKT.gate <- polygonGate(filterId="Early", .gate=cbind("V605-A"=cd4.points, "R780-A"=ccr5.points))
+
+flowWorkspace::add(P5.gs, earlyNKT.gate, parent="/CD3/NKT")
+recompute(P5.gs)
+
+########################################
+# Effector NKT cells CD3+CD1d+CD4-CD8- #
+########################################
+cd4.points <- c(0, 0, 6, 6, 0)
+cd8.points <- c(0, 5, 5, 0, 0)
+effectorNKT.gate <- polygonGate(filterId="Effector", .gate=cbind("V605-A"=cd4.points, "V585-A"=cd8.points))
+
+flowWorkspace::add(P5.gs, effectorNKT.gate, parent="/CD3/NKT")
+recompute(P5.gs)
+
+########################################
+# Terminal NKT cells CD3+CD1d+CD4-CD8+ #
+########################################
+cd4.points <- c(0, 0, 6, 6, 0)
+cd8.points <- c(5, 12, 12, 5, 5)
+terminalNKT.gate <- polygonGate(filterId="Terminal", .gate=cbind("V605-A"=cd4.points, "V585-A"=cd8.points))
+
+flowWorkspace::add(P5.gs, terminalNKT.gate, parent="/CD3/NKT")
+recompute(P5.gs)
+```
+
+
+```{r, fig.height=2.75, fig.width=2.75}
+earlynkt.p <- ggcyto(P5.gs[1], aes(x=`V605-A`, y=`R780-A`), subset="/CD3/NKT") +
+  geom_hex(bins=128) +
+  geom_gate(earlyNKT.gate) +
+  geom_gate(naiveNKT.gate) +
+  theme_mike() +
+  #labs(x="CD1-multi PE", y="CD3 BV785") +
+  theme(strip.text=element_blank()) +
+  lims(x=c(0, 12), y=c(0, 12))
+
+ggsave(earlynkt.p,
+       filename="~/Dropbox/Noise_FACS/TwinsUK/plot.dir/P5_earlyNKT_gate.png",
+       height=2.75, width=2.75, dpi=300)
+
+earlynkt.p
+```
+
+
+
+```{r, fig.height=2.75, fig.width=2.75}
+effectnkt.p <- ggcyto(P5.gs[1], aes(x=`V605-A`, y=`V585-A`), subset="/CD3/NKT") +
+  geom_hex(bins=128) +
+  geom_gate(effectorNKT.gate) +
+  geom_gate(terminalNKT.gate) +
+  theme_mike() +
+  #labs(x="CD1-multi PE", y="CD3 BV785") +
+  theme(strip.text=element_blank()) +
+  lims(x=c(0, 12), y=c(0, 12))
+
+ggsave(effectnkt.p,
+       filename="~/Dropbox/Noise_FACS/TwinsUK/plot.dir/P5_effectorNKT_gate.png",
+       height=2.75, width=2.75, dpi=300)
+
+effectnkt.p
+```
+
+
+
+```{r}
+#######################################################
+# Vd1+ gamma-delta T cell - CD3+CD1d+TCR_Vd1+TCR_Vd2- #
+#######################################################
+vd1.points <- c(6.75, 6.75, 12, 12, 6.75)
+vd2.points <- c(0, 7, 7, 0, 0)
+Vd1.gate <- polygonGate(filterId="Vd1", .gate=cbind("B515-A"=vd1.points, "G610-A"=vd2.points))
+
+flowWorkspace::add(P5.gs, Vd1.gate, parent="/CD3")
+recompute(P5.gs)
+
+####################################
+## Create a gate for Vg9+ T cells ##
+####################################
+vd1.points <- c(0, 0, 6.1, 6.1, 5.5, 0)
+vg9.points <- c(7.75, 10.5, 10.5, 8, 7.5, 7.5)
+Vg9.gate <- polygonGate(filterId="Vg9", .gate=cbind("B515-A"=vd1.points, "R660-A"=vg9.points))
+
+flowWorkspace::add(P5.gs, Vg9.gate, parent="/CD3")
+recompute(P5.gs)
+```
+
+
+
+```{r, fig.height=2.75, fig.width=2.75}
+vd1.p <- ggcyto(P5.gs[1], aes(x=`B515-A`, y=`G610-A`), subset="/CD3") +
+  geom_hex(bins=64) +
+  theme_mike() +
+  theme(strip.text=element_blank()) +
+  lims(x=c(0, 12), y=c(0, 12)) +
+  labs(x="TCR-Vd1 FITC", y="TCR Vd2 Ax594") +
+  geom_gate(Vd1.gate)
+
+ggsave(vd1.p,
+       filename="~/Dropbox/Noise_FACS/TwinsUK/plot.dir/P5_gdTVd1_gate.png",
+       height=2.75, width=2.75, dpi=300)
+
+vd1.p
+```
+
+
+```{r, fig.height=2.75, fig.width=2.75}
+vg9.p <- ggcyto(P5.gs[1], aes(x=`B515-A`, y=`R660-A`), subset="/CD3") +
+  geom_hex(bins=64) +
+  theme_mike() +
+  theme(strip.text=element_blank()) +
+  lims(x=c(0, 12), y=c(0, 12)) +
+  labs(x="TCR-Vd1 FITC", y="TCR Vg9 APC") +
+  geom_gate(Vg9.gate)
+
+ggsave(vg9.p,
+       filename="~/Dropbox/Noise_FACS/TwinsUK/plot.dir/P5_gdTVg9_gate.png",
+       height=2.75, width=2.75, dpi=300)
+
+vg9.p
+```
+
+
+```{r}
+#####################################################################
+# Vd2+Vg9dim gamma-delta T cell - CD3+CD1d+TCR_Vd1-TCR_Vg9+TCR_Vd2+ #
+#####################################################################
+vd2.points <- c(6.75, 9.5, 10, 10, 6.75, 6.75)
+vg9.points <- c(7.5, 11, 11, 7, 7, 7.5)
+Vd2p.gate <- polygonGate(filterId="Vd2pos", .gate=cbind("G610-A"=vd2.points, "R660-A"=vg9.points))
+
+flowWorkspace::add(P5.gs, Vd2p.gate, parent="/CD3/Vg9")
+recompute(P5.gs)
+
+#####################################################################
+# Vd2-Vg9+ gamma-delta T cell - CD3+CD1d+TCR_Vd1-TCR_Vg9dimTCR_Vd2- #
+#####################################################################
+vd2.points <- c(6.75, 9.5, 0, 0, 6.75)
+vg9.points <- c(7.5, 11, 11, 7.5, 7.5)
+Vd2n.gate <- polygonGate(filterId="Vd2neg", .gate=cbind("G610-A"=vd2.points, "R660-A"=vg9.points))
+
+flowWorkspace::add(P5.gs, Vd2n.gate, parent="/CD3/Vg9")
+recompute(P5.gs)
+
+# 
+# # plot Cd3 vs side scatter
+# ggcyto(P5.gs[6:9], aes(x=`R660-A`, y=`G610-A`), subset="/CD3/Vg9") +
+#   geom_hex(bins=128) +
+#   lims(y=c(0, 12), x=c(0, 12)) +
+#   geom_gate(Vd2n.gate) +
+#   geom_gate(Vd2p.gate)
+
+```
+
+
+```{r, fig.height=2.75, fig.width=2.75}
+vd2.p <- ggcyto(P5.gs[1], aes(x=`R660-A`, y=`G610-A`), subset="/CD3/Vg9") +
+  geom_hex(bins=64) +
+  theme_mike() +
+  theme(strip.text=element_blank()) +
+  lims(x=c(0, 12), y=c(0, 12)) +
+  labs(x="TCR-Vg9 APC", y="TCR Vd2 Ax594") +
+  geom_gate(Vd2n.gate) +
+  geom_gate(Vd2p.gate)
+
+ggsave(vd2.p,
+       filename="~/Dropbox/Noise_FACS/TwinsUK/plot.dir/P5_gdTVd2_gate.png",
+       height=2.75, width=2.75, dpi=300)
+
+vd2.p
+```
+
+
+```{r}
+# # flush all the files out before the next panel
+sink(file="/dev/null")
+rm(list=ls())
+gc()
+sink(file=NULL)
+```
+
+
+## Panel 6
+
+```{r}
+print("TwinsUK Panel 6")
+path.to.files <- "~/Dropbox/Noise_FACS/TwinsUK/FCS_files/"
+P6.flow.data <- read.flowSet(path=path.to.files,
+                             transformation=FALSE, pattern="P6")
+
+twin.ids <- unlist(lapply(strsplit(x=sampleNames(P6.flow.data), split=" ", fixed=TRUE),
+                          FUN=function(X) paste("Twin", X[1], X[2], sep="_")))
+sampleNames(P6.flow.data) <- twin.ids
+
+# select sample from group A
+P6.flow.data <- P6.flow.data[1:10]
+
+# apply compensation
+comp.matrix <- keyword(P6.flow.data[[1]])$`$SPILLOVER`
+P6.flow.data <- compensate(P6.flow.data, spillover <- comp.matrix)
+
+# remove samples with < 1000 events recorded
+extract <- numeric(0)
+for(x in seq_len(length(P6.flow.data))){
+  events <- nrow(P6.flow.data[[x]])
+  if(events < 1000){
+    extract <- c(extract, x)
+  }
+}
+
+P6.fs_filt <- P6.flow.data[seq(along=P6.flow.data)]
+if(length(extract)){P6.fs_filt <- P6.fs_filt[-(extract),]}
+
+# remove channels that aren't interesting
+param.desc <-  pData(P6.flow.data[[1]]@parameters)[, "desc"]
+names(param.desc) <- colnames(P6.flow.data[[1]])
+param.desc[is.na(param.desc)] <- names(param.desc)[is.na(param.desc)]
+param.meta <- do.call(cbind.data.frame,
+                      list("Param"=names(param.desc),
+                           "Marker"=param.desc))
+
+# transform the data
+arcTrans <- arcsinhTransform()
+logTrans <- logTransform()
+biexpTrans <- biexponentialTransform()
+scaleTrans <- scaleTransform()
+logicleTrans <- logicleTransform()
+linearTrans <- linearTransform()
+
+# transform each paramter
+transform1 <- transformList("B515-A", biexpTrans)
+transform2 <- transformList("B710-A", biexpTrans)
+transform3 <- transformList("V450-A", biexpTrans)
+transform4 <- transformList("V545-A", biexpTrans)
+transform5 <- transformList("V565-A", biexpTrans)
+transform6 <- transformList("V585-A", biexpTrans)
+transform7 <- transformList("V605-A", biexpTrans)
+transform8 <- transformList("V655-A", biexpTrans)
+transform9 <- transformList("V705-A", biexpTrans)
+transform10 <- transformList("V800-A", biexpTrans)
+transform11 <- transformList("R660-A", biexpTrans)
+transform12 <- transformList("R710-A", biexpTrans)
+transform13 <- transformList("R780-A", biexpTrans)
+transform14 <- transformList("G560-A", biexpTrans)
+transform15 <- transformList("G610-A", biexpTrans)
+transform16 <- transformList("G660-A", biexpTrans)
+transform17 <- transformList("G710-A", biexpTrans)
+transform18 <- transformList("G780-A", biexpTrans)
+transformForwardH <- transformList("FSC-H", biexpTrans)
+transformSideA <- transformList("SSC-A", biexpTrans)
+transformForwardA <- transformList("FSC-A", biexpTrans)
+
+P6.fs_filt <- transform(P6.fs_filt, transform1)
+P6.fs_filt <- transform(P6.fs_filt, transform2)
+P6.fs_filt <- transform(P6.fs_filt, transform3)
+P6.fs_filt <- transform(P6.fs_filt, transform4)
+P6.fs_filt <- transform(P6.fs_filt, transform5)
+P6.fs_filt <- transform(P6.fs_filt, transform6)
+P6.fs_filt <- transform(P6.fs_filt, transform7)
+P6.fs_filt <- transform(P6.fs_filt, transform8)
+P6.fs_filt <- transform(P6.fs_filt, transform9)
+P6.fs_filt <- transform(P6.fs_filt, transform10)
+P6.fs_filt <- transform(P6.fs_filt, transform11)
+P6.fs_filt <- transform(P6.fs_filt, transform12)
+P6.fs_filt <- transform(P6.fs_filt, transform13)
+P6.fs_filt <- transform(P6.fs_filt, transform14)
+P6.fs_filt <- transform(P6.fs_filt, transform15)
+P6.fs_filt <- transform(P6.fs_filt, transform16)
+P6.fs_filt <- transform(P6.fs_filt, transform17)
+P6.fs_filt <- transform(P6.fs_filt, transform18)
+
+# P6.fs_filt <- transform(P6.fs_filt, transformForwardH)
+# P6.fs_filt <- transform(P6.fs_filt, transformSideA)
+# P6.fs_filt <- transform(P6.fs_filt, transformForwardA)
+
+# # # gate on singlets
+# ggcyto(P6.fs_filt[1:6], aes(x=`FSC-A`, y=`FSC-H`)) +
+#   geom_hex(bins=128) +
+#   lims(x=c(35000, 2.7e5), y=c(35000, 2.7e5))
+
+# set up a singlets gate
+# setup forward and side scatter gates
+area.points <- c(3e4, 5e4, 2.3e5, 2.3e5, 3.5e4, 3.2e4)
+height.points <- c(3.2e4, 3.2e4, 2e5, 2.5e5, 5e4, 3.2e4)
+singlet.gate <- polygonGate(filterId="Singlet", .gate=cbind("FSC-A"=area.points, "FSC-H"=height.points))
+singlet.filter <- filter(P6.fs_filt, singlet.gate)
+singlet.gates <- lapply(singlet.filter, 
+                        function(res) filterDetails(res, "Singlet")$filter)
+```
+
+
+```{r, fig.height=2.75, fig.width=2.75}
+singlet.p <- ggcyto(P6.fs_filt[1], aes(x=`FSC-A`, y=`FSC-H`)) +
+  geom_hex(bins=128) +
+  lims(x=c(30000, 2.7e5), y=c(30000, 2.7e5)) +
+  geom_gate(singlet.gates) +
+  theme_mike() +
+  theme(strip.text=element_blank())
+
+ggsave(singlet.p,
+       filename="~/Dropbox/Noise_FACS/TwinsUK/plot.dir/P6_singlet.png",
+       height=2.75, width=2.75, dpi=300)
+
+singlet.p
+```
+
+
+
+```{r}
+# subset all singlet cells before all other analyses
+P6.singlet <- Subset(P6.fs_filt, singlet.gate)
+
+# select live cells on Side scatter and AqBlue
+live.range <- rectangleGate(filterId="Live", list("V545-A"=c(0, 7.5)))
+live.filter <- filter(P6.singlet, live.range)
+live.gates <- lapply(live.filter, 
+                     function(res) filterDetails(res, "Live")$filter)
+```
+
+
+
+```{r, fig.height=2.75, fig.width=2.75}
+live.p <- ggcyto(P6.singlet[1], aes(x=`V545-A`, y=`SSC-A`)) +
+  geom_hex(bins=128)  +
+  lims(x=c(0, 13)) +
+  geom_gate(live.gates) +
+  labs(x="Aq Blu") +
+  theme_mike() +
+  theme(strip.text=element_blank())
+
+ggsave(live.p,
+       filename="~/Dropbox/Noise_FACS/TwinsUK/plot.dir/P6_live_gate.png",
+       height=2.75, width=2.75, dpi=300)
+
+live.p
+```
+
+```{r}
+# subset all live cells before all other analyses
+P6.filter <- Subset(P6.singlet, live.range)
+
+# apply side and forward scatter transformations
+P6.filter <- transform(P6.filter, transformForwardH)
+P6.filter <- transform(P6.filter, transformSideA)
+P6.filter <- transform(P6.filter, transformForwardA)
+
+# ggcyto(P6.filter[1:6], aes(x=`SSC-A`, y=`FSC-A`)) +
+#   geom_hex(bins=128) 
+
+#################################################
+## need to align main parameters before gating ##
+#################################################
+### some parameters aren't being registered properly
+# might need to only select cells with values > 0
+
+# might need to split the parameters to get those with 2 peaks
+# properly aligned compare to those with shoulder peaks.
+# I may need to warp some parameters separately to others
+densityplot(x=~`G710-A`,
+            data=P6.filter[4:9],
+            channel=c("G710-A"))
+
+pars <- colnames(P6.filter)[4:21]
+# second.warp <- c("G560-A")
+# first.warp <- pars[!pars %in% second.warp]
+P6.warping <- warpSet(P6.filter, stains=pars)
+#P6.warping <- warpSet(P6.filter, stains=first.warp)
+#P6.warping <- warpSet(P6.warping, stains=second.warp, peakNr=2)
+
+# densityplot(x=~`G560-A`,
+#             data=P6.warping[4:9],
+#             channel=c("G560-A"))
+```
+
+
+
+```{r}
+# set up gating scheme using a GatingSet object
+P6.gs <- GatingSet(P6.warping)
+```
+
+```{r}
+# rm(list=c("P6.warping", "P6.flow.data", "P6.filter", "P6.singlet", 
+#           "P6.fs_filt"))
+# gc()
+```
+
+
+```{r}
+cd19.points <- c(0, 0, 12, 12, 6.25, 6.25, 5.5, 0)
+cd20.points <- c(6.5, 12, 12, 0, 0, 5.75, 6.25, 6.5)
+bcell.gate <- polygonGate(filterId="Bcells", .gate=cbind("V655-A"=cd19.points, "V605-A"=cd20.points))
+```
+
+
+```{r, fig.height=2.75, fig.width=2.75}
+bcell.p <- ggcyto(P6.gs[1], aes(x=`V605-A`, y=`V655-A`), subset="root") +
+  geom_hex(bins=256) +
+  lims(y=c(0, 12), x=c(0, 12)) +
+  geom_gate(bcell.gate) +
+  labs(x="CD20 BV605", y="CD19 QD655") +
+  theme_mike() +
+  theme(strip.text=element_blank())
+
+ggsave(bcell.p,
+       filename="~/Dropbox/Noise_FACS/TwinsUK/plot.dir/P6_Bcell_gate.png",
+       height=2.75, width=2.75, dpi=300)
+
+bcell.p
+```
+
+
+
+```{r}
+flowWorkspace::add(P6.gs, bcell.gate, parent="root")
+recompute(P6.gs)
+
+# B cell groups defined by this panel:
+# Immature B cells - CD19+CD10+
+# Naive mature B cells - CD19+CD10-CD95-
+# IgA+ Memory mature B cells - CD19+CD10-CD95+IgA+IgG-
+# IgG+ Memory mature B cells - CD19+CD10-CD95+IgA-IgG+
+# IgM+ Memory mature B cells - CD19+CD10-CD95+IgA-IgG-IgM+
+# IgE+ Memory mature B cells - CD19+CD10-CD95+IgA-IgG-IgM-
+
+#################################
+# Immature B cells - CD19+CD10+ #
+#################################
+cd10.points <- c(7, 7, 10, 10, 7)
+cd21.points <- c(0, 12, 10, 0, 0)
+immature.gate <- polygonGate(filterId="Immature", .gate=cbind("R660-A"=cd10.points, "G710-A"=cd21.points))
+
+flowWorkspace::add(P6.gs, immature.gate, parent="Bcells")
+recompute(P6.gs)
+
+#################
+# Mature B cells 
+#################
+cd10.points <- c(0, 0, 7, 7, 0)
+cd21.points <- c(0, 12, 12, 0, 0)
+mature.gate <- polygonGate(filterId="Mature", .gate=cbind("R660-A"=cd10.points, "G710-A"=cd21.points))
+
+flowWorkspace::add(P6.gs, mature.gate, parent="Bcells")
+recompute(P6.gs)
+```
+
+
+```{r, fig.height=2.75, fig.width=2.75}
+mature.p <- ggcyto(P6.gs[6], aes(x=`R660-A`, y=`G710-A`), subset="/Bcells") +
+  geom_hex(bins=128) +
+  lims(y=c(0, 12), x=c(0, 12)) +
+  geom_gate(immature.gate) +
+  geom_gate(mature.gate) +
+  labs(x="CD10 APC", y="CD21 Cy55 PE") +
+  theme_mike() +
+  theme(strip.text=element_blank())
+
+ggsave(mature.p,
+       filename="~/Dropbox/Noise_FACS/TwinsUK/plot.dir/P6_matureBcell_gate.png",
+       height=2.75, width=2.75, dpi=300)
+
+mature.p
+```
+
+
+```{r}
+##########################################
+# Naive mature B cells - CD19+CD10-CD95- #
+##########################################
+cd95.points <- c(0, 0, 7, 7, 0)
+igg.points <- c(0, 12, 10, 0, 0)
+naive.gate <- polygonGate(filterId="Naive", .gate=cbind("G660-A"=cd95.points, "V450-A"=igg.points))
+
+flowWorkspace::add(P6.gs, naive.gate, parent="Mature")
+recompute(P6.gs)
+
+##########################################
+# Memory mature B cells - CD19+CD10-CD95+ #
+##########################################
+cd95.points <- c(7.5, 7.5, 12, 12, 7.5)
+igg.points <- c(0, 12, 10, 0, 0)
+memory.gate <- polygonGate(filterId="Memory", .gate=cbind("G660-A"=cd95.points, "V450-A"=igg.points))
+
+flowWorkspace::add(P6.gs, memory.gate, parent="Mature")
+recompute(P6.gs)
+```
+
+
+```{r, fig.height=2.75, fig.width=2.75}
+mem.p <- ggcyto(P6.gs[4], aes(x=`G660-A`, y=`V450-A`), subset="/Bcells/Mature") +
+  geom_hex(bins=128) +
+  lims(y=c(0, 12), x=c(0, 12)) +
+  geom_gate(naive.gate) +
+  geom_gate(memory.gate) +
+  labs(x="CD95 Cy5 PE", y="IgG V450") +
+  theme_mike() +
+  theme(strip.text=element_blank())
+
+ggsave(mem.p,
+       filename="~/Dropbox/Noise_FACS/TwinsUK/plot.dir/P6_memoryBcell_gate.png",
+       height=2.75, width=2.75, dpi=300)
+
+mem.p
+```
+
+
+```{r}
+########################################################
+# IgA+ Memory mature B cells - CD19+CD10-CD95+IgA+IgG- #
+########################################################
+iga.points <- c(7, 7, 12, 12, 7)
+igg.points <- c(0, 6, 6, 0, 0)
+iga.gate <- polygonGate(filterId="IgA", .gate=cbind("G560-A"=iga.points, "V450-A"=igg.points))
+
+flowWorkspace::add(P6.gs, iga.gate, parent="Memory")
+recompute(P6.gs)
+
+########################################################
+# IgG+ Memory mature B cells - CD19+CD10-CD95+IgA-IgG+ #
+########################################################
+iga.points <- c(0, 0, 7, 7, 0)
+igg.points <- c(6, 12, 12, 6, 6)
+igg.gate <- polygonGate(filterId="IgG", .gate=cbind("G560-A"=iga.points, "V450-A"=igg.points))
+
+flowWorkspace::add(P6.gs, igg.gate, parent="Memory")
+recompute(P6.gs)
+```
+
+```{r}
+######################################################
+# Neg Memory mature B cells - CD19+CD10-CD95+IgA-IgG- 
+######################################################
+iga.points <- c(0, 0, 7, 7, 0)
+igg.points <- c(0, 6, 6, 0, 0)
+neg.gate <- polygonGate(filterId="Neg", .gate=cbind("G560-A"=iga.points, "V450-A"=igg.points))
+
+flowWorkspace::add(P6.gs, neg.gate, parent="Memory")
+recompute(P6.gs)
+```
+
+
+
+```{r, fig.height=2.75, fig.width=2.75}
+igg.p <- ggcyto(P6.gs[4], aes(x=`G560-A`, y=`V450-A`), subset="/Bcells/Mature/Memory") +
+  geom_hex(bins=64) +
+  lims(y=c(0, 12), x=c(0, 12)) +
+  geom_gate(iga.gate) +
+  geom_gate(neg.gate) +
+  geom_gate(igg.gate) +
+  labs(x="IgA PE", y="IgG V450") +
+  theme_mike() +
+  theme(strip.text=element_blank())
+
+ggsave(igg.p,
+       filename="~/Dropbox/Noise_FACS/TwinsUK/plot.dir/P6_IgGBcell_gate.png",
+       height=2.75, width=2.75, dpi=300)
+
+igg.p
+```
+
+
+```{r}
+############################################################
+# IgM+ Memory mature B cells - CD19+CD10-CD95+IgA-IgG-IgM+ #
+############################################################
+igd.points <- c(0, 0, 12, 12, 0)
+igm.points <- c(8, 12, 12, 8, 8)
+igm.gate <- polygonGate(filterId="IgM", .gate=cbind("R710-A"=igd.points, "V585-A"=igm.points))
+
+flowWorkspace::add(P6.gs, igm.gate, parent="Neg")
+recompute(P6.gs)
+
+############################################################
+# IgE+ Memory mature B cells - CD19+CD10-CD95+IgA-IgG-IgM- #
+############################################################
+igd.points <- c(0, 0, 5, 5, 0)
+igm.points <- c(0, 6, 6, 0, 0)
+ige.gate <- polygonGate(filterId="IgE", .gate=cbind("R710-A"=igd.points, "V585-A"=igm.points))
+
+flowWorkspace::add(P6.gs, ige.gate, parent="Neg")
+recompute(P6.gs)
+```
+
+
+
+```{r, fig.height=2.75, fig.width=2.75}
+igm.p <- ggcyto(P6.gs[4], aes(x=`R710-A`, y=`V585-A`), subset="/Bcells/Mature/Memory/Neg") +
+  geom_hex(bins=32) +
+  lims(y=c(0, 12), x=c(0, 12)) +
+  geom_gate(igm.gate) +
+  geom_gate(ige.gate) +
+  labs(x="IgD Ax700", y="IgM BV570") +
+  theme_mike() +
+  theme(strip.text=element_blank())
+
+ggsave(igm.p,
+       filename="~/Dropbox/Noise_FACS/TwinsUK/plot.dir/P6_IgMBcell_gate.png",
+       height=2.75, width=2.75, dpi=300)
+
+igm.p
+```
+
+
+```{r}
+# # flush all the files out before the next panel
+sink(file="/dev/null")
+rm(list=ls())
+gc()
+sink(file=NULL)
+```
+
+## Panel 7
+
+```{r}
+#################################
+### Panel 7 - Dendritic cells  ##
+#################################
+
+print("TwinsUK Panel 7A")
+path.to.files <- "~/Dropbox/Noise_FACS/TwinsUK/FCS_files/"
+P7.flow.data <- read.flowSet(path=path.to.files,
+                             transformation=FALSE, pattern="P7")
+
+twin.ids <- unlist(lapply(strsplit(x=sampleNames(P7.flow.data), split=" ", fixed=TRUE),
+                          FUN=function(X) paste("Twin", X[1], X[2], sep="_")))
+sampleNames(P7.flow.data) <- twin.ids
+P7.flow.data <- P7.flow.data[1:10]
+
+# apply compensation
+comp.matrix <- keyword(P7.flow.data[[1]])$`$SPILLOVER`
+P7.flow.data <- compensate(P7.flow.data, spillover <- comp.matrix)
+
+
+# remove samples with < 1000 events recorded
+extract <- numeric(0)
+for(x in seq_len(length(P7.flow.data))){
+  events <- nrow(P7.flow.data[[x]])
+  if(events < 1000){
+    extract <- c(extract, x)
+  }
+}
+
+P7.fs_filt <- P7.flow.data[seq(along=P7.flow.data)]
+if(length(extract)){P7.fs_filt <- P7.fs_filt[-(extract),]}
+
+# remove channels that aren't interesting
+param.desc <-  pData(P7.flow.data[[1]]@parameters)[, "desc"]
+names(param.desc) <- colnames(P7.flow.data[[1]])
+param.desc[is.na(param.desc)] <- names(param.desc)[is.na(param.desc)]
+param.meta <- do.call(cbind.data.frame,
+                      list("Param"=names(param.desc),
+                           "Marker"=param.desc))
+
+# transform the data
+arcTrans <- arcsinhTransform()
+logTrans <- logTransform()
+biexpTrans <- biexponentialTransform()
+scaleTrans <- scaleTransform()
+logicleTrans <- logicleTransform()
+linearTrans <- linearTransform()
+
+# transform each paramter
+transform1 <- transformList("B515-A", biexpTrans)
+transform2 <- transformList("B710-A", biexpTrans)
+transform3 <- transformList("V450-A", biexpTrans)
+transform4 <- transformList("V545-A", biexpTrans)
+transform5 <- transformList("V565-A", biexpTrans)
+transform6 <- transformList("V585-A", biexpTrans)
+transform7 <- transformList("V605-A", biexpTrans)
+transform8 <- transformList("V655-A", biexpTrans)
+transform9 <- transformList("V705-A", biexpTrans)
+transform10 <- transformList("V800-A", biexpTrans)
+transform11 <- transformList("R660-A", biexpTrans)
+transform12 <- transformList("R710-A", biexpTrans)
+transform13 <- transformList("R780-A", biexpTrans)
+transform14 <- transformList("G560-A", biexpTrans)
+transform15 <- transformList("G610-A", biexpTrans)
+transform16 <- transformList("G660-A", biexpTrans)
+transform17 <- transformList("G710-A", biexpTrans)
+transform18 <- transformList("G780-A", biexpTrans)
+transformForwardH <- transformList("FSC-H", biexpTrans)
+transformSideA <- transformList("SSC-A", biexpTrans)
+transformForwardA <- transformList("FSC-A", biexpTrans)
+
+P7.fs_filt <- transform(P7.fs_filt, transform1)
+P7.fs_filt <- transform(P7.fs_filt, transform2)
+P7.fs_filt <- transform(P7.fs_filt, transform3)
+P7.fs_filt <- transform(P7.fs_filt, transform4)
+P7.fs_filt <- transform(P7.fs_filt, transform5)
+P7.fs_filt <- transform(P7.fs_filt, transform6)
+P7.fs_filt <- transform(P7.fs_filt, transform7)
+P7.fs_filt <- transform(P7.fs_filt, transform8)
+P7.fs_filt <- transform(P7.fs_filt, transform9)
+P7.fs_filt <- transform(P7.fs_filt, transform10)
+P7.fs_filt <- transform(P7.fs_filt, transform11)
+P7.fs_filt <- transform(P7.fs_filt, transform12)
+P7.fs_filt <- transform(P7.fs_filt, transform13)
+P7.fs_filt <- transform(P7.fs_filt, transform14)
+P7.fs_filt <- transform(P7.fs_filt, transform15)
+P7.fs_filt <- transform(P7.fs_filt, transform16)
+P7.fs_filt <- transform(P7.fs_filt, transform17)
+P7.fs_filt <- transform(P7.fs_filt, transform18)
+
+# P7.fs_filt <- transform(P7.fs_filt, transformForwardH)
+# P7.fs_filt <- transform(P7.fs_filt, transformSideA)
+# P7.fs_filt <- transform(P7.fs_filt, transformForwardA)
+
+# # gate on singlets
+# ggcyto(P7.fs_filt[1:6], aes(x=`FSC-A`, y=`FSC-H`)) +
+#   geom_hex(bins=128) +
+#   lims(x=c(35000, 2.7e5), y=c(35000, 2.7e5))
+
+# set up a singlets gate
+# setup forward and side scatter gates
+area.points <- c(3e4, 5e4, 2.3e5, 2.3e5, 3.5e4, 3.2e4)
+height.points <- c(3.2e4, 3.2e4, 2e5, 2.5e5, 5e4, 3.2e4)
+singlet.gate <- polygonGate(filterId="Singlet", .gate=cbind("FSC-A"=area.points, "FSC-H"=height.points))
+singlet.filter <- filter(P7.fs_filt, singlet.gate)
+singlet.gates <- lapply(singlet.filter, 
+                        function(res) filterDetails(res, "Singlet")$filter)
+```
+
+
+
+```{r, fig.width=2.75, fig.height=2.75}
+single.p <- ggcyto(P7.fs_filt[1], aes(x=`FSC-A`, y=`FSC-H`)) +
+  geom_hex(bins=128) +
+  lims(x=c(30000, 2.7e5), y=c(30000, 2.7e5)) +
+  theme_mike() +
+  theme(strip.text=element_blank()) +
+  geom_gate(singlet.gates)
+
+ggsave(single.p,
+       filename="~/Dropbox/Noise_FACS/TwinsUK/plot.dir/P7_singlet_gate.png",
+       height=2.75, width=2.75, dpi=300)
+
+single.p
+```
+
+
+
+```{r}
+# subset all singlet cells before all other analyses
+P7.singlet <- Subset(P7.fs_filt, singlet.gate)
+
+# select live cells on Side scatter and AqBlue
+live.range <- rectangleGate(filterId="Live", list("V545-A"=c(0, 7.5)))
+live.filter <- filter(P7.singlet, live.range)
+live.gates <- lapply(live.filter, 
+                     function(res) filterDetails(res, "Live")$filter)
+```
+
+
+
+```{r, fig.height=2.75, fig.width=2.75}
+live.p <- ggcyto(P7.singlet[1], aes(x=`V545-A`, y=`SSC-A`)) +
+  geom_hex(bins=128)  +
+  geom_gate(live.gates) +
+  theme_mike() +
+  theme(strip.text=element_blank()) +
+  lims(x=c(0, 13))
+
+ggsave(live.p,
+       filename="~/Dropbox/Noise_FACS/TwinsUK/plot.dir/P7_live_gate.png",
+       height=2.75, width=2.75, dpi=300)
+
+live.p
+```
+
+
+
+```{r}
+# subset all live cells before all other analyses
+P7.filter <- Subset(P7.singlet, live.range)
+
+# apply side and forward scatter transformations
+P7.filter <- transform(P7.filter, transformForwardH)
+P7.filter <- transform(P7.filter, transformSideA)
+P7.filter <- transform(P7.filter, transformForwardA)
+
+# ggcyto(P7.filter[1:6], aes(x=`SSC-A`, y=`FSC-A`)) +
+#   geom_hex(bins=128) 
+
+#################################################
+## need to align main parameters before gating ##
+#################################################
+### some parameters aren't being registered properly
+# might need to only select cells with values > 0
+
+# might need to split the parameters to get those with 2 peaks
+# properly aligned compare to those with shoulder peaks.
+# I may need to warp some parameters separately to others
+#densityplot(x=~`V605-A`,
+#            data=P7.filter[4:9],
+#            channel=c("V605-A"))
+
+pars <- colnames(P7.filter)[4:21]
+second.warp <- c("V605-A", "G660-A")# , "B515-A")
+third.warp <- c("G710-A")
+first.warp <- pars[!pars %in% c(second.warp, third.warp)]
+P7.warping <- warpSet(P7.filter, stains=first.warp)
+P7.warping <- warpSet(P7.warping, stains=second.warp, peakNr=2)
+P7.warping <- warpSet(P7.warping, stains=third.warp, bwFac=1.5)
+
+#densityplot(x=~`G710-A`,
+#            data=P7.warping[1:9],
+#            channel=c("G710-A"))
+```
+
+
+
+```{r}
+# set up gating scheme using a GatingSet object
+P7.gs <- GatingSet(P7.warping)
+```
+
+
+
+```{r}
+# rm(list=c("P7.warping", "P7.flow.data", "P7.filter", "P7.singlet",
+#           "P7.fs_filt"))
+# gc()
+```
+
+
+
+```{r}
+# plot HLA-DR vs lineage markers to select APCs
+lin.points <- c(0, 0, 8.5, 8.5, 0)
+hla.points <- c(7, 12, 12, 7, 7)
+dc.gate <- polygonGate(filterId="DC", .gate=cbind("R710-A"=hla.points, "V605-A"=lin.points))
+
+flowWorkspace::add(P7.gs, dc.gate, parent="root")
+recompute(P7.gs)
+
+# dendritic cell groups defined by this panel:
+# CD4 myeloid DCs - CD11c+CD123loCD1c+CD141-
+# CD8 myeloid DCs - CD11c+CD123loCD1c+CD141+
+# Inflammatory CD1c- DC - CD11c+Cd123loCD1c-CD16+
+# CD16-CD1c- DC - CD11c+Cd123loCD1c-CD16-
+# PDC - CD11c-CD123+
+# CD123+CD11c+ DC - CD11c+CD123+
+```
+
+
+```{r, fig.height=2.75, fig.width=2.75}
+hla.p <- ggcyto(P7.gs[1], aes(x=`R710-A`, y=`V605-A`), subset="root") +
+  geom_hex(bins=128)  +
+  geom_gate(dc.gate) +
+  theme_mike() +
+  labs(x="HLA-DR Ax680", y="CD3/19/56 QD605") +
+  theme(strip.text=element_blank()) +
+  lims(x=c(0, 12), y=c(0, 12))
+
+ggsave(hla.p,
+       filename="~/Dropbox/Noise_FACS/TwinsUK/plot.dir/P7_HLA_gate.png",
+       height=2.75, width=2.75, dpi=300)
+
+hla.p
+```
+
+
+```{r}
+#######
+## Remove CD14+ monocytes
+#######
+# plot HLA-DR vs lineage markers to select APCs
+cd14.points <- c(0, 0, 7, 7, 0)
+hla.points <- c(7, 12, 12, 7, 7)
+mono.gate <- polygonGate(filterId="Neg", .gate=cbind("R710-A"=hla.points, "V800-A"=cd14.points))
+
+flowWorkspace::add(P7.gs, mono.gate, parent="DC")
+recompute(P7.gs)
+```
+
+
+```{r, fig.height=2.75, fig.width=2.75}
+negmono.p <- ggcyto(P7.gs[1], aes(x=`R710-A`, y=`V800-A`), subset="/DC") +
+  geom_hex(bins=128)  +
+  geom_gate(mono.gate) +
+  theme_mike() +
+  labs(x="HLA-DR Ax680", y="CD14 QD800") +
+  theme(strip.text=element_blank()) +
+  lims(x=c(0, 12), y=c(0, 12))
+
+ggsave(negmono.p,
+       filename="~/Dropbox/Noise_FACS/TwinsUK/plot.dir/P7_negMono_gate.png",
+       height=2.75, width=2.75, dpi=300)
+
+negmono.p
+```
+
+
+```{r}
+#########
+## Classical CD16-CD14+ monocytes
+#########
+# plot HLA-DR vs lineage markers to select APCs
+cd14.points <- c(7, 7, 12, 12, 7)
+cd16.points <- c(0, 7, 7, 0, 0)
+mono.pos.gate <- polygonGate(filterId="Monocyte", .gate=cbind("G710-A"=cd14.points, "V800-A"=cd16.points))
+
+flowWorkspace::add(P7.gs, mono.pos.gate, parent="root")
+recompute(P7.gs)
+
+
+#########
+## Non-classical CD16+CD14+ monocytes
+#########
+# plot HLA-DR vs lineage markers to select APCs
+cd14.points <- c(7, 7, 12, 12, 7)
+cd16.points <- c(7, 12, 12, 7, 7)
+infmono.gate <- polygonGate(filterId="CD16Mono", .gate=cbind("G710-A"=cd14.points, "V800-A"=cd16.points))
+
+flowWorkspace::add(P7.gs, infmono.gate, parent="root")
+recompute(P7.gs)
+```
+
+
+```{r, fig.height=2.75, fig.width=2.75}
+mono.p <- ggcyto(P7.gs[1], aes(y=`G710-A`, x=`V800-A`), subset="root") +
+  geom_hex(bins=128)  +
+  geom_gate(infmono.gate) +
+  geom_gate(mono.pos.gate) +
+  theme_mike() +
+  labs(x="CD14 QD800", y="CD16 Cy55 PE") +
+  theme(strip.text=element_blank()) +
+  lims(x=c(0, 12), y=c(0, 12))
+
+ggsave(mono.p,
+       filename="~/Dropbox/Noise_FACS/TwinsUK/plot.dir/P7_Mono_gate.png",
+       height=2.75, width=2.75, dpi=300)
+
+mono.p
+```
+
+
+```{r}
+#############################
+# myeloid DCs - CD11c+CD123lo
+#############################
+cd11c.points <- c(10.5, 10.5, 8.5, 10.5, 12, 12)
+cd123.points <- c(0, 5.0, 7.5, 10.5, 10.5, 0)
+MDC.gate <- polygonGate(filterId="MDC", .gate=cbind("G660-A"=cd11c.points, "G560-A"=cd123.points))
+
+flowWorkspace::add(P7.gs, MDC.gate, parent="Neg")
+
+######################
+# PDC - CD11c-CD123+ #
+######################
+cd11c.points <- c(8.5, 10.5, 8, 7.0, 8.5)
+cd123.points <- c(7.5, 10.5, 10.5, 8.5, 7.5)
+PDC.gate <- polygonGate(filterId="PDC", .gate=cbind("G660-A"=cd11c.points, "G560-A"=cd123.points))
+
+flowWorkspace::add(P7.gs, PDC.gate, parent="Neg")
+
+##################################
+# CD123+CD11c+ DC - CD123+CD11c+ #
+##################################
+cd11c.points <- c(2, 7.5, 8.5, 2.5)
+cd123.points <- c(10, 10, 12, 12)
+cd123DC.gate <- polygonGate(filterId="CD123", .gate=cbind("G660-A"=cd11c.points, "G560-A"=cd123.points))
+
+flowWorkspace::add(P7.gs, cd123DC.gate, parent="Neg")
+recompute(P7.gs)
+```
+
+
+```{r, fig.height=2.75, fig.width=2.75}
+dc.p <- ggcyto(P7.gs[4], aes(y=`G660-A`, x=`G560-A`), subset="/DC/Neg") +
+  geom_hex(bins=128)  +
+  geom_gate(MDC.gate) +
+  geom_gate(PDC.gate) +
+  geom_gate(cd123DC.gate) +
+  theme_mike() +
+  labs(x="CD123 PE", y="CD11c Cy5 PE") +
+  theme(strip.text=element_blank()) +
+  lims(x=c(0, 12), y=c(0, 12))
+
+ggsave(dc.p,
+       filename="~/Dropbox/Noise_FACS/TwinsUK/plot.dir/P7_DC_gate.png",
+       height=2.75, width=2.75, dpi=300)
+
+dc.p
+```
+
+
+```{r}
+##############################################
+# CD4 myeloid DCs - CD11c+CD123loCD1c+CD141- #
+##############################################
+cd1c.points <- c(7.5, 12, 12, 7.5)
+cd141.points <- c(0, 0, 6.5, 6.5)
+CD4.gate <- polygonGate(filterId="CD4", .gate=cbind("R780-A"=cd1c.points, "B515-A"=cd141.points))
+
+flowWorkspace::add(P7.gs, CD4.gate, parent="MDC")
+recompute(P7.gs)
+
+##############################################
+# CD8 myeloid DCs - CD11c+CD123loCD1c+CD141+ #
+##############################################
+cd1c.points <- c(0, 12, 12, 0)
+cd141.points <- c(6.5, 6.5, 12, 12)
+CD8.gate <- polygonGate(filterId="CD8", .gate=cbind("R780-A"=cd1c.points, "B515-A"=cd141.points))
+
+flowWorkspace::add(P7.gs, CD8.gate, parent="MDC")
+recompute(P7.gs)
+
+
+#################
+# Double neg gate
+#################
+cd1c.points <- c(0, 7, 7, 0)
+cd141.points <- c(0, 0, 6.5, 6.5)
+Dneg.gate <- polygonGate(filterId="DoubleNeg", .gate=cbind("R780-A"=cd1c.points, "B515-A"=cd141.points))
+
+flowWorkspace::add(P7.gs, Dneg.gate, parent="MDC")
+recompute(P7.gs)
+```
+
+
+
+```{r, fig.height=2.75, fig.width=2.75}
+cddc.p <- ggcyto(P7.gs[4], aes(y=`R780-A`, x=`B515-A`), subset="/DC/Neg/MDC") +
+  geom_hex(bins=64)  +
+  geom_gate(CD4.gate) +
+  geom_gate(CD8.gate) +
+  geom_gate(Dneg.gate) +
+  theme_mike() +
+  labs(x="CD141 FITC", y="CD1c Cy7 APC") +
+  theme(strip.text=element_blank()) +
+  lims(x=c(0, 12), y=c(0, 12))
+
+ggsave(cddc.p,
+       filename="~/Dropbox/Noise_FACS/TwinsUK/plot.dir/P7_CDDC_gate.png",
+       height=2.75, width=2.75, dpi=300)
+
+cddc.p
+```
+
+```{r}
+###################################################
+# Inflammatory CD1c- DC - CD11c+Cd123loCD1c-CD16+ #
+###################################################
+cd16.points <- c(7.5, 12, 12, 7.5)
+cd141.points <- c(0, 0, 6.5, 6.5)
+inflam.gate <- polygonGate(filterId="Inflammatory", .gate=cbind("G710-A"=cd16.points, "B515-A"=cd141.points))
+
+flowWorkspace::add(P7.gs, inflam.gate, parent="DoubleNeg")
+recompute(P7.gs)
+
+###################################################
+# Inflammatory CD1c- DC - CD11c+Cd123loCD1c-CD16+ #
+###################################################
+cd16.points <- c(0, 7, 7, 0)
+cd141.points <- c(0, 0, 6.5, 6.5)
+cd16neg.gate <- polygonGate(filterId="CD16neg", .gate=cbind("G710-A"=cd16.points, "B515-A"=cd141.points))
+
+flowWorkspace::add(P7.gs, cd16neg.gate, parent="DoubleNeg")
+recompute(P7.gs)
+```
+
+
+
+```{r, fig.height=2.75, fig.width=2.75}
+infdc.p <- ggcyto(P7.gs[4], aes(y=`G710-A`, x=`B515-A`), subset="/DC/Neg/MDC/DoubleNeg") +
+  geom_hex(bins=32)  +
+  geom_gate(inflam.gate) +
+  geom_gate(cd16neg.gate) +
+  theme_mike() +
+  labs(x="CD141 FITC", y="CD16 Cy55 PE") +
+  theme(strip.text=element_blank()) +
+  lims(x=c(0, 12), y=c(0, 12))
+
+ggsave(infdc.p,
+       filename="~/Dropbox/Noise_FACS/TwinsUK/plot.dir/P7_InfDC_gate.png",
+       height=2.75, width=2.75, dpi=300)
+
+infdc.p
+```
+
+
+
+
+
