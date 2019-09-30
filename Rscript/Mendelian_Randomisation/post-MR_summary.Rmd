@@ -1,0 +1,307 @@
+---
+title: "Mendelian Randomisation - Visualising MR analysis"
+output: html_notebook
+---
+
+# Introduction
+
+I've run an MR analysis for each variability-QTL and _cis_-eQTL in matching cell types where they exist.  This notebook visualises these results and generates some 
+summaries.
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+library(ggplot2)
+library(scales)
+library(biomaRt)
+library(lettercase)
+library(reshape2)
+library(cowplot)
+library(stringi)
+library(MendelianRandomization)
+source("GGtheme/theme_mike.R")
+
+# directory containing results of MR analysis
+mr.directory <- "MR_analysis/"
+mr.files <- list.files(mr.directory)
+
+mr.results.list <- list()
+for(x in seq_along(mr.files)){
+  x.file <- mr.files[x]
+  cohort <- unlist(lapply(strsplit(x.file, split="_", fixed=TRUE), FUN=function(X) paste0(X[1])))
+  celltype <- unlist(lapply(strsplit(x.file, split="_", fixed=TRUE), FUN=function(X) paste0(X[2])))
+  celltype <- gsub(celltype, pattern="-MR.txt", replacement="")
+  
+  mr.result <- read.table(paste0(mr.directory, x.file),
+                          sep="\t", header=TRUE, stringsAsFactors=FALSE)
+  mr.result$BroadCell <- celltype
+  mr.result$QTLCohort <- cohort
+  mr.results.list[[x.file]] <- mr.result
+}
+
+mr.results <- do.call(rbind.data.frame,
+                      mr.results.list)
+
+# read in varSNP info to select the appropriate cell types
+var.clump <- read.table("VariabilityQTL_clump-results.txt", sep="\t", 
+                        header=TRUE, stringsAsFactors=FALSE)
+
+mr.results$QTLCell <- "NONE"
+mr.results$QTLCell[mr.results$SNP %in% var.clump[var.clump$SNP %in% mr.results$SNP & grepl(var.clump$HarmonCell, pattern="[M|m]ono" ), ]$SNP] <- "Monocyte"
+mr.results$QTLCell[mr.results$SNP %in% var.clump[var.clump$SNP %in% mr.results$SNP & grepl(var.clump$HarmonCell, pattern="phil" ), ]$SNP] <- "Granulocyte"
+mr.results$QTLCell[mr.results$SNP %in% var.clump[var.clump$SNP %in% mr.results$SNP & grepl(var.clump$HarmonCell, pattern="CD8" ), ]$SNP] <- "CD8.Tcell"
+mr.results$QTLCell[mr.results$SNP %in% var.clump[var.clump$SNP %in% mr.results$SNP & grepl(var.clump$HarmonCell, pattern="NKcells" ), ]$SNP] <- "NKcell"
+mr.results$QTLCell[mr.results$SNP %in% var.clump[var.clump$SNP %in% mr.results$SNP & grepl(var.clump$HarmonCell, pattern="Bcells" ), ]$SNP] <- "Bcell"
+mr.results$QTLCell[mr.results$SNP %in% var.clump[var.clump$SNP %in% mr.results$SNP & grepl(var.clump$HarmonCell, pattern="CD4" ), ]$SNP] <- "CD4.Tcell"
+mr.results$QTLCell[mr.results$SNP %in% var.clump[var.clump$SNP %in% mr.results$SNP & grepl(var.clump$HarmonCell, pattern="Tfh" ), ]$SNP] <- "CD4.Tfh"
+mr.results$QTLCell[mr.results$SNP %in% var.clump[var.clump$SNP %in% mr.results$SNP & grepl(var.clump$HarmonCell, pattern="CD4.Th2" ), ]$SNP] <- "CD4.Th2"
+mr.results$QTLCell[mr.results$SNP %in% var.clump[var.clump$SNP %in% mr.results$SNP & grepl(var.clump$HarmonCell, pattern="CD4.Th17" ), ]$SNP] <- "CD4.Th17"
+mr.results$QTLCell[mr.results$SNP %in% var.clump[var.clump$SNP %in% mr.results$SNP & grepl(var.clump$HarmonCell, pattern="DN" ), ]$SNP] <- "DN.Tcell"
+mr.results$QTLCell[mr.results$SNP %in% var.clump[var.clump$SNP %in% mr.results$SNP & grepl(var.clump$HarmonCell, pattern="DP" ), ]$SNP] <- "DP.Tcell"
+mr.results$QTLCell[mr.results$SNP %in% var.clump[var.clump$SNP %in% mr.results$SNP & grepl(var.clump$HarmonCell, pattern="Treg" ), ]$SNP] <- "Treg"
+
+# remove the table rows where cell types are not concordant
+mr.results$Concordant <- "Yes"
+mr.results$Concordant[mr.results$QTLCell %in% c("Treg") & !mr.results$Dataset %in% c("DICE.TregMem", "Ishigaki.CD4")] <- "No"
+mr.results$Concordant[mr.results$QTLCell %in% c("CD4.Tfh") & !mr.results$Dataset %in% c("DICE.Tfh", "Ishigaki.CD4")] <- "No"
+mr.results$Concordant[mr.results$QTLCell %in% c("CD4.Th2") & !mr.results$Dataset %in% c("DICE.Th2", "DICE.Thstar", "Ishigaki.CD4")] <- "No"
+mr.results$Concordant[mr.results$QTLCell %in% c("CD4.Th17") & !mr.results$Dataset %in% c("DICE.Th17", "DICE.Thstar", "Ishigaki.CD4")] <- "No"
+mr.results$Concordant[mr.results$QTLCell %in% c("CD8.Tcell") & !mr.results$Dataset %in% c("DICE.CD8naive", "Ishigaki.CD8")] <- "No"
+mr.results$Concordant[mr.results$QTLCell %in% c("CD4.Tcell") & !mr.results$Dataset %in% c("DICE.CD4naive", "Ishigaki.CD4")] <- "No"
+
+mr.results <- mr.results[mr.results$Concordant %in% c("Yes"), ]
+mr.results <- mr.results[mr.results$SNP %in% var.clump$SNP, ]
+
+# remove all non-protein coding genes?
+mr.results <- mr.results[!grepl(mr.results$Symbol, pattern="ENSG"), ]
+
+# match the variability traits to the MR results
+mr.results <- merge(mr.results, var.clump, by='SNP')
+```
+
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+hist(mr.results$BETA.P, col='grey80', breaks=50, main="", xlab="p-value")
+```
+
+There's definitely an enrichment for small p-values. What is the best way to correct these for multiple testing without wiping out the signal?
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+# strictly speaking I need to adjust for ALL tests conducted after removing non-sensical tests, e.g. CD8+ T cells for CD4 Treg traits, etc
+# I'll use FDR at 10%
+mr.results$FDR <- p.adjust(mr.results$BETA.P, method = "fdr")
+mr.results$SigFDR <- as.numeric(mr.results$FDR <= 0.05)
+mr.results$LibFDR <- as.numeric(mr.results$FDR <= 0.1)
+mr.results$ConFDR <- as.numeric(mr.results$FDR <= 0.01)
+```
+
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+table(mr.results$SigFDR, mr.results$QTLCohort)
+```
+
+With a 10% FDR?
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+table(mr.results$LibFDR, mr.results$QTLCohort)
+```
+
+This is a lot, and probably signifies multiple potential causal eGenes per variability-QTL - pleiotropy!!!
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+table(mr.results$SigFDR, mr.results$Method)
+```
+
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+# count the number of unique varSNPs
+sum.tab <- as.data.frame(table(mr.results$QTLCell[mr.results$SigFDR == 1], mr.results$SNP[mr.results$SigFDR == 1]))
+table(sum.tab$Var1[sum.tab$Freq > 0])
+```
+
+Not so many plausible candidate genes here.
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+table(mr.results$SNP[mr.results$SigFDR == 1])
+```
+
+Some SNPs have multiple plausible candidates - I'll check if these are the same gene or not.
+
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+table(mr.results$SNP[mr.results$SigFDR == 1], mr.results$QTLCell[mr.results$SigFDR == 1])
+```
+
+rs11869066 has a single eGene in CD8+ T cells: _TNK1_. This SNP increases CXCR3 variability in CD8+ Tc2 T cells. _TNK1_ regulates IFN signalling through serine 
+phosphorylation of STAT1 (PMID: 24449862).
+
+rs12661029 has a single gene in moncoytes: _CD109_, this is the gene in which it lies. Other than potentially being a marker for early osteoclastogenesis, I can't 
+find much on this gene in monocytes. This SNP is associated with increased CD4 variability - does it point to cryptic structure, such as cells poised to become 
+macrophages, or cells that are extravasating, etc?
+
+rs3134505 has a single eGene in naive CD4 T cells: _TP53INP1_, which is a positive regulator of autophagy in response to cellular stress or activation.
+
+rs62231153 has a 1 eGenes in CD4+ Tfh cells: a naturally occuring read-through transcript of SPECC1L-ADORA2A, which is probably degraded by NMD. This SNP is 
+associated with decreased variability of PTGDR2 on CD4+ Tfh cells.
+
+rs6925186 has 1 eGenes in monocytes:  _SMPD2_. This SNP is associated with increased HLA-DR variability. _SMPD2_ is most likely a lysophospholipase rather than 
+a sphingomyelinase. It may also be involved in TNF signalling.
+
+rs72687286 has 3 eGenes in naive CD8+ T cells: _KCNC4_, _GSTM5_ and _KCNA2_. This underpins the clear potential for pleiotropy to create the impression 
+of causality. _KCNC4_ and _KCNA2_ are potassium channels, whilst _GSTM5_ is a glutathione S-transferases. Biologically these are all plausible candidates 
+for altering CCR7 variability on transitional T memory cells.
+
+rs72701430 has a single eGene in naive CD8 T cells: _KDM4C_. This gene is a H3K9 methyltransferase, specifically it demthylates trimethyl to dimethyl. It is also a 
+genetic risk factor for system vasculitides. This would point to changes in global methylation as a driver of cell-to-cell variability - there might be some genomics 
+information to tap into here from the literature. This SNP increases CXCR3 variability on CD8+ T cells.
+
+rs73029069 has a single eGenes in CD4+ T cells: _TSEN2_. This SNP is associated with increased variability of CD4 in CD4+ T cells. _TSEN2_ is a tRNA splicing 
+endonuclease that catalyses the first step in pre-tRNA splicing - could be interesting, and implicate tRNA availability in cell-to-cell expression variability.
+
+rs73236001 has a single eGene in Th17 cells: _MBOAT4_. This SNP is associated with increased CD4 variability on Th17 cells. The gene encodes membrane bound 
+O-acyltransferase domain containing 4 which mediates the octanoylation of ghrelin, which stimulates appetite. There might be some weak evidence of a role for ghrelin 
+in immune system function and inflammation.
+
+rs73557284 is associated with 1 eGene in B cells: _ECT2L_, which might be a Rho guanyl-nucleoside exchange factor (GEF). The only vague link is that it is 
+frequently mutated in early T-cell precursor lymphoblastic leukaemia.
+
+rs971419521 has a single eGene in memory Tregs: _DENND1A_. This SNP increases CD3 variability on CD4+ T regs.
+
+I need a forest plot of the causal estimate effects for each association.
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE, fig.height=5.95, fig.width=7.95}
+xmax <- max(abs(mr.results[mr.results$SigFDR == 1, ]$BETA.Causal + (1.96*mr.results[mr.results$SigFDR == 1, ]$BETA.SE)))
+# concatenate snp and eGene
+mr.results$Label <- paste(mr.results$SNP, mr.results$Symbol, sep="_")
+mr.results$GeneLabel <- paste(mr.results$Protein, mr.results$Symbol, sep="_")
+cell.cols <- c("#0064ff", "#00b6ff", "#ff7800", "#e82000")
+names(cell.cols) <- c("CD4.Tcell", "CD8.Tcell", "Bcell", "Monocyte")
+
+mr.p <- ggplot(mr.results[mr.results$SigFDR == 1, ], 
+               aes(x=Label, y=BETA.Causal, fill=BroadCell)) +
+  geom_errorbar(mapping=aes(ymin=BETA.Causal - (1.96*BETA.SE), ymax=BETA.Causal + (1.96*BETA.SE))) +
+  geom_point(shape=21, size=4) +
+  theme_mike() +
+  expand_limits(y=c(-xmax, xmax))  +
+  scale_fill_manual(values=cell.cols) +
+  theme(legend.position="right") +
+  guides(fill=guide_legend(title="Celltype", ncol=1, title.position="top")) +
+  labs(x="varSNP_eGene", y=expression(bold(paste("MR ", beta, " Estimate (\u00B1 95% CI)")))) +
+  coord_flip()
+
+ggsave(mr.p,
+       filename="plot.dir/MR_summary-FDR5pc.pdf",
+       height=5.95, width=7.95, useDingbats=FALSE)
+
+mr.p
+```
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE, fig.height=5.95, fig.width=7.95}
+mr.p <- ggplot(mr.results[mr.results$SigFDR == 1, ], 
+               aes(x=GeneLabel, y=BETA.Causal, fill=BroadCell)) +
+  geom_errorbar(mapping=aes(ymin=BETA.Causal - (1.96*BETA.SE), ymax=BETA.Causal + (1.96*BETA.SE))) +
+  geom_point(shape=21, size=4) +
+  theme_mike() +
+  expand_limits(y=c(-xmax, xmax))  +
+  scale_fill_manual(values=cell.cols) +
+  theme(legend.position="right") +
+  guides(fill=guide_legend(title="Celltype", ncol=1, title.position="top")) +
+  labs(x="vProtein_eGene", y=expression(bold(paste("MR ", beta, " Estimate (\u00B1 95% CI)")))) +
+  coord_flip()
+
+ggsave(mr.p,
+       filename="MR_summary-ProteinLabel-FDR5pc.pdf",
+       height=5.95, width=7.95, useDingbats=FALSE)
+
+mr.p
+```
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE, fig.height=12.95, fig.width=7.95}
+xmax <- max(abs(mr.results[mr.results$LibFDR == 1, ]$BETA.Causal + (1.96*mr.results[mr.results$LibFDR == 1, ]$BETA.SE)))
+# concatenate snp and eGene
+mr.results$Label <- paste(mr.results$SNP, mr.results$Symbol, sep="_")
+mr.results$GeneLabel <- paste(mr.results$Protein, mr.results$Symbol, sep="_")
+cell.cols <- c("#0064ff", "#00b6ff", "#ff7800", "#e82000", "#6600a0", "#05a000")
+names(cell.cols) <- c("CD4.Tcell", "CD8.Tcell", "Bcell", "Monocyte", "Granulocyte", "NKcell")
+
+mr.p <- ggplot(mr.results[mr.results$LibFDR == 1, ], 
+               aes(x=GeneLabel, y=BETA.Causal, fill=BroadCell)) +
+  geom_errorbar(mapping=aes(ymin=BETA.Causal - (1.96*BETA.SE), ymax=BETA.Causal + (1.96*BETA.SE))) +
+  geom_point(shape=21, size=4) +
+  theme_mike() +
+  expand_limits(y=c(-xmax, xmax))  +
+  scale_fill_manual(values=cell.cols) +
+  theme(legend.position="right",
+        axis.text.y=element_text(size=10)) +
+  guides(fill=guide_legend(title="Celltype", ncol=1, title.position="top")) +
+  labs(x="varSNP_eGene", y=expression(bold(paste("MR ", beta, " Estimate (\u00B1 95% CI)")))) +
+  coord_flip()
+
+ggsave(mr.p,
+       filename="plot.dir/MR_summary-FDR10pc.pdf",
+       height=5.95, width=7.95, useDingbats=FALSE)
+
+mr.p
+```
+
+
+
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE, fig.height=5.95, fig.width=8.95}
+xmax <- max(abs(mr.results[mr.results$SigFDR == 1, ]$Het.Stat))
+# concatenate snp and eGene
+mr.results$Label <- paste(mr.results$SNP, mr.results$Symbol, sep="_")
+cell.cols <- c("#0064ff", "#00b6ff", "#ff7800", "#e82000")
+names(cell.cols) <- c("CD4.Tcell", "CD8.Tcell", "Bcell", "Monocyte")
+
+mr.p <- ggplot(mr.results[mr.results$SigFDR == 1, ],
+               aes(x=Label, y=Het.Stat, fill=BroadCell, size=-log10(Het.Stat.P))) +
+  geom_point(shape=21) +
+  theme_mike() +
+  expand_limits(y=c(-xmax, xmax))  +
+  scale_fill_manual(values=cell.cols) +
+  theme(legend.position="right") +
+  guides(fill=guide_legend(title="Celltype", ncol=1, title.position="top"),
+         size=guide_legend(title=expression(italic(paste("Heterogeneity -log"[10], " P-value"))),
+                           ncol=1, title.position="top")) +
+  labs(x="varSNP_eGene", y="MR Q-statistic") +
+  coord_flip()
+
+ggsave(mr.p,
+       filename="plot.dir/MR_CochraneQ_summary-FDR5pc.png",
+       height=5.95, width=8.95, dpi=300)
+
+mr.p
+```
+
+
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE, fig.height=5.95, fig.width=8.95}
+xmax <- max(abs(mr.results[mr.results$LibFDR == 1, ]$Het.Stat))
+# concatenate snp and eGene
+mr.results$Label <- paste(mr.results$SNP, mr.results$Symbol, sep="_")
+cell.cols <- c("#0064ff", "#00b6ff", "#ff7800", "#e82000", "#6600a0", "#05a000")
+ names(cell.cols) <- c("CD4.Tcell", "CD8.Tcell", "Bcell", "Monocyte", "Granulocyte", "NKcell")
+
+mr.p <- ggplot(mr.results[mr.results$LibFDR == 1, ],
+               aes(x=Label, y=Het.Stat, fill=BroadCell, size=-log10(Het.Stat.P))) +
+  geom_point(shape=21) +
+  theme_mike() +
+  expand_limits(y=c(-xmax, xmax))  +
+  scale_fill_manual(values=cell.cols) +
+  theme(legend.position="right") +
+  guides(fill=guide_legend(title="Celltype", ncol=1, title.position="top"),
+         size=guide_legend(title=expression(italic(paste("Heterogeneity -log"[10], " P-value"))),
+                           ncol=1, title.position="top")) +
+  labs(x="varSNP_eGene", y="MR Q-statistic") +
+  coord_flip()
+
+ggsave(mr.p,
+       filename="plot.dir/MR_CochraneQ_summary-FDR10pc.png",
+       height=5.95, width=8.95, dpi=300)
+
+mr.p
+```
+
+
+
+
+

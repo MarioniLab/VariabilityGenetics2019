@@ -1,0 +1,2812 @@
+---
+title: "Mendelian Randomisation - do cis-eQTLs drive var-QTLs?"
+output: html_notebook
+---
+
+# Introduction
+
+There are multiple pairs of _cis_-eQTLs colocalised with variability-QTLs, but the question is whether these are purely correlative by chance, or genuinely represent 
+a cis-eQTL driving a variability-QTL.
+
+This is an example of 2-sample MR and non-overlapping samples which addresses any issues of reverse causality. We still cannot rule out dependence between the instrumental 
+variable (gene) and phenotype (variability), nor pleiotropy, i.e. X may affect the phenotype by some other means as well.
+
+This is going to be a very crude analysis, involving just the pairs of cis-eQTL and variability-QTL with a colocalisation posterior probability $\ge 0.7$. The causal 
+effect estimate for an exposure (cis-eQTL) and outcome (variability-QTL) is the ratio of their regression estimates:
+
+$$\beta_{causal} = \frac{\hat{\beta_{outcome}}}{\hat{\beta_{exposure}}}$$
+
+This can be estimated using an inverse variance-weighting meta-analysis, as well as the standard error (get citation), over $k \in \{1,2,...,m\}$ SNPs:
+
+$$\hat{\beta_{IVW}} = \frac{\Sigma_{k}\hat{X_k}\hat{Y_k}\sigma^{-2}_{Yk}}{\Sigma_k\hat{X^{2}_k}\sigma^{-2}_{Yk}} $$
+
+The standard error of this estimate is then:
+
+$$\sqrt{\frac{1}{\Sigma_k\hat{X^2_k}\sigma^{-2}_{Yk}}}$$
+
+This approach only works if __all__ of the genetic instruments are valid instrumental variables, which is frankly unlikely in my case. I can try it with just the lead SNP 
+and or the best-case clump SNP? There is an alternative strategy that uses a weighted median estimator, so up to 50% of the genetic variants could be invalid instrumental 
+variables. This meta-analysis approach does not deal with LD, the multiple genetic instruments are themselves independent of each other, which is clearly violated by LD.
+
+Unfortunately I do not have any positive controls for this, but there are plenty of negative controls...
+
+I'll run this test case by extracting the lead SNP and it's partners, and use whichever single SNP is present in both data sets.
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+library(ggplot2)
+library(scales)
+library(biomaRt)
+library(lettercase)
+library(reshape2)
+library(cowplot)
+library(stringi)
+library(MendelianRandomization)
+source("~/Dropbox/R_sessions/GGMike/theme_mike.R")
+
+varqtl.clump <- read.table("VariabilityQTL_clump-results.txt",
+                           sep="\t", header=TRUE, stringsAsFactors=FALSE)
+```
+
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE, results='hide'}
+biomaRt.connection <- useMart("ensembl", "hsapiens_gene_ensembl", host="grch37.ensembl.org", path="/biomart/martservice")
+allgene.df <- getBM(attributes = c("ensembl_gene_id", "external_gene_name", "chromosome_name", "transcript_length",
+                                   "start_position", "end_position", "strand", "gene_biotype"),
+                    mart=biomaRt.connection)
+
+# filter out non-protein coding genes
+allgene.df <- allgene.df[allgene.df$gene_biotype %in% c("protein_coding"), ]
+allgene.df <- allgene.df[!duplicated(allgene.df$ensembl_gene_id), ]
+```
+
+I'll loop over the colocalised pairs, extract the summary statistics and calculate a crude causal effect estimate as the ratio of the betas, with the standard error:
+
+$$\hat{\beta_{causal}} = \frac{\hat{X}\hat{Y}\sigma^{-2}_{Y}}{\hat{X^{2}}\sigma^{-2}_{Y}}$$
+$$se(\hat{\beta_{causal}})=\sqrt{\frac{1}{\hat{X^2}\sigma^{-2}_{Y}}} $$
+
+There is a handy-looking package from Stephen Burgess and colleagues that implements most of the MR methods in R, including an adjustment for LD between SNPs. I'll just 
+run the crude attempt first, then maybe dip into this package for a more formal analysis.
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+# extract the relevant eQTL summary stats, i.e. beta and SE
+# each of these directories contains block-gzipped and tabix index summary statistics from the original 
+# cis-eQTL studies
+chen.dir <- "eQTLs/Chen/"
+fairfax.dir <- "eQTLs/Fairfax/"
+kasela.dir <- "eQTLs/Kasela_PLoSGenet/"
+dice.dir <- "eQTLs/Schmeidel_Cell_DICE/"
+ishigaki.dir <- "eQTLs/Yamamoto_NatGenet/hum0099.v1.eqtl.v1/eQTL_gene_level/raw_data/"
+```
+
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+# extract summary stats for AIM2 from each data set with a tabix query
+chen.mono.file <- paste0(chen.dir, "Chen_monocyte.tsv.bgz")
+lead.chr <- cd10.var.summary$CHR
+lead.bp <- cd10.var.summary$BP
+chen.tabix <- paste0("tabix ", chen.mono.file, " ", lead.chr, ":", lead.bp-1e5, "-", lead.bp+1e5)
+chen.tabix.call <- system(command=chen.tabix, intern=TRUE)  
+chen.tabix.mono <- do.call(rbind.data.frame,
+                           sapply(chen.tabix.call, FUN=function(X) strsplit(X, split="\t", fixed=TRUE)))
+colnames(chen.tabix.mono) <- c("CHR", "BP", "A1", "A2", "SNP", "GENE", "P", "BETA", "BONFP", "FDR", "MAF", "SE")
+
+# extract the cd10 SNP
+chen.tabix.mono.lead <- chen.tabix.mono[chen.tabix.mono$SNP %in% cd10.snp, ]
+```
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+# extract summary stats for AIM2 from each data set with a tabix query
+chen.tcell.file <- paste0(chen.dir, "Chen_tcell.tsv.bgz")
+lead.chr <- cd10.var.summary$CHR
+lead.bp <- cd10.var.summary$BP
+chen.tabix <- paste0("tabix ", chen.tcell.file, " ", lead.chr, ":", lead.bp-1e5, "-", lead.bp+1e5)
+chen.tabix.call <- system(command=chen.tabix, intern=TRUE)  
+chen.tabix.tcell <- do.call(rbind.data.frame,
+                           sapply(chen.tabix.call, FUN=function(X) strsplit(X, split="\t", fixed=TRUE)))
+colnames(chen.tabix.tcell) <- c("CHR", "BP", "A1", "A2", "SNP", "GENE", "P", "BETA", "BONFP", "FDR", "MAF", "SE")
+
+# extract the cd10 SNP
+chen.tabix.tcell.lead <- chen.tabix.tcell[chen.tabix.tcell$SNP %in% cd10.snp, ]
+```
+
+
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+# extract summary stats for AIM2 from each data set with a tabix query
+fairfax.mononaive.file <- paste0(fairfax.dir, "Fairfax_Naive.txt.bgz")
+lead.chr <- cd10.var.summary$CHR
+lead.bp <- cd10.var.summary$BP
+fairfax.tabix <- paste0("tabix ", fairfax.mononaive.file, " ", lead.chr, ":", lead.bp-1e5, "-", lead.bp+1e5)
+fairfax.tabix.call <- system(command=fairfax.tabix, intern=TRUE)  
+fairfax.tabix.mono <- do.call(rbind.data.frame,
+                           sapply(fairfax.tabix.call, FUN=function(X) strsplit(X, split="\t", fixed=TRUE)))
+colnames(fairfax.tabix.mono) <- c("SNP", "GENE", "PROBE", "CHR", "BP", "PROBE.CHR", "STAT", "P", "FDR")
+
+# extract the cd10 SNP - not present!
+fairfax.tabix.mono.lead <- fairfax.tabix.mono[fairfax.tabix.mono$SNP %in% cd10.snp, ]
+```
+
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+# extract summary stats for AIM2 from each data set with a tabix query
+fairfax.monoifn.file <- paste0(fairfax.dir,  "Fairfax_IFN.txt.bgz" )
+lead.chr <- cd10.var.summary$CHR
+lead.bp <- cd10.var.summary$BP
+fairfax.tabix <- paste0("tabix ", fairfax.monoifn.file, " ", lead.chr, ":", lead.bp-1e5, "-", lead.bp+1e5)
+fairfax.tabix.call <- system(command=fairfax.tabix, intern=TRUE)  
+fairfax.tabix.monoifn <- do.call(rbind.data.frame,
+                           sapply(fairfax.tabix.call, FUN=function(X) strsplit(X, split="\t", fixed=TRUE)))
+colnames(fairfax.tabix.monoifn) <- c("SNP", "GENE", "PROBE", "CHR", "BP", "PROBE.CHR", "STAT", "P", "FDR")
+
+# extract the cd10 SNP - not present!
+fairfax.tabix.monoifn.lead <- fairfax.tabix.monoifn[fairfax.tabix.monoifn$SNP %in% cd10.snp, ]
+```
+
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+# extract summary stats for AIM2 from each data set with a tabix query
+fairfax.monolps2.file <- paste0(fairfax.dir, "Fairfax_LPS2h.txt.bgz")
+lead.chr <- cd10.var.summary$CHR
+lead.bp <- cd10.var.summary$BP
+fairfax.tabix <- paste0("tabix ", fairfax.monolps2.file, " ", lead.chr, ":", lead.bp-1e5, "-", lead.bp+1e5)
+fairfax.tabix.call <- system(command=fairfax.tabix, intern=TRUE)  
+fairfax.tabix.monolps2 <- do.call(rbind.data.frame,
+                           sapply(fairfax.tabix.call, FUN=function(X) strsplit(X, split="\t", fixed=TRUE)))
+colnames(fairfax.tabix.monolps2) <- c("SNP", "GENE", "PROBE", "CHR", "BP", "PROBE.CHR", "STAT", "P", "FDR")
+
+# extract the cd10 SNP - not present!
+fairfax.tabix.monolps2.lead <- fairfax.tabix.monolps2[fairfax.tabix.monolps2$SNP %in% cd10.snp, ]
+```
+
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+# extract summary stats for AIM2 from each data set with a tabix query
+fairfax.monolps24.file <- paste0(fairfax.dir, "Fairfax_LPS24h.txt.bgz")
+lead.chr <- cd10.var.summary$CHR
+lead.bp <- cd10.var.summary$BP
+fairfax.tabix <- paste0("tabix ", fairfax.monolps24.file, " ", lead.chr, ":", lead.bp-1e5, "-", lead.bp+1e5)
+fairfax.tabix.call <- system(command=fairfax.tabix, intern=TRUE)  
+fairfax.tabix.monolps24 <- do.call(rbind.data.frame,
+                           sapply(fairfax.tabix.call, FUN=function(X) strsplit(X, split="\t", fixed=TRUE)))
+colnames(fairfax.tabix.monolps24) <- c("SNP", "GENE", "PROBE", "CHR", "BP", "PROBE.CHR", "STAT", "P", "FDR")
+
+# extract the cd10 SNP - not present!
+fairfax.tabix.monolps24.lead <- fairfax.tabix.monolps24[fairfax.tabix.monolps24$SNP %in% cd10.snp, ]
+```
+
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+# extract summary stats for AIM2 from each data set with a tabix query
+ishigaki.cd4.files <- list.files(paste0(ishigaki.dir, "CD4"))
+ishigaki.cd4.file <- ishigaki.cd4.files[grepl(ishigaki.cd4.files, pattern=paste0("chr",lead.chr,"_"))]
+lead.chr <- cd10.var.summary$CHR
+lead.bp <- cd10.var.summary$BP
+
+ishigaki.cd4.qtls <- read.table(paste0(paste0(ishigaki.dir, "CD4/"), ishigaki.cd4.file), sep="\t", header=TRUE, stringsAsFactors=FALSE)
+
+# extract the cd10 SNP - not present!
+ishigaki.cd4.lead <- ishigaki.qtls[ishigaki.qtls$SNP %in% cd10.snp, ]
+```
+
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+# extract summary stats for AIM2 from each data set with a tabix query
+ishigaki.cd8.files <- list.files(paste0(ishigaki.dir, "CD8"))
+ishigaki.cd8.file <- ishigaki.cd8.files[grepl(ishigaki.cd8.files, pattern=paste0("chr",lead.chr,"_"))]
+lead.chr <- cd10.var.summary$CHR
+lead.bp <- cd10.var.summary$BP
+
+ishigaki.cd8.qtls <- read.table(paste0(paste0(ishigaki.dir, "CD8/"), ishigaki.cd8.file), sep="\t", header=TRUE, stringsAsFactors=FALSE)
+
+# extract the cd10 SNP - not present!
+ishigaki.cd8.lead <- ishigaki.qtls[ishigaki.qtls$SNP %in% cd10.snp, ]
+```
+
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+# extract summary stats for AIM2 from each data set with a tabix query
+kasela.cd4.file <- paste0(kasela.dir, "CD4_cis_Kasella.txt.bgz")
+lead.chr <- cd10.var.summary$CHR
+lead.bp <- cd10.var.summary$BP
+
+kasela.tabix <- paste0("tabix ", kasela.cd4.file, " ", lead.chr, ":", lead.bp-1e5, "-", lead.bp+1e5)
+kasela.tabix.call <- system(command=kasela.tabix, intern=TRUE)  
+kasela.tabix.cd4 <- do.call(rbind.data.frame,
+                           sapply(kasela.tabix.call, FUN=function(X) strsplit(X, split="\t", fixed=TRUE)))
+colnames(kasela.tabix.cd4) <- c("CHR", "BP", "SNP", "GENE", "P", "N", "A1.A2") 
+
+# extract the cd10 SNP - not present!
+kasela.tabix.cd4.lead <- kasela.tabix.cd4[kasela.tabix.cd4$SNP %in% cd10.snp, ]
+```
+
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+# extract summary stats for AIM2 from each data set with a tabix query
+kasela.cd8.file <- paste0(kasela.dir, "CD8_cis_Kasella.txt.bgz")
+lead.chr <- cd10.var.summary$CHR
+lead.bp <- cd10.var.summary$BP
+
+kasela.tabix <- paste0("tabix ", kasela.cd8.file, " ", lead.chr, ":", lead.bp-1e5, "-", lead.bp+1e5)
+kasela.tabix.call <- system(command=kasela.tabix, intern=TRUE)  
+kasela.tabix.cd8 <- do.call(rbind.data.frame,
+                           sapply(kasela.tabix.call, FUN=function(X) strsplit(X, split="\t", fixed=TRUE)))
+colnames(kasela.tabix.cd8) <- c("CHR", "BP", "SNP", "GENE", "P", "N", "A1.A2") 
+
+# extract the cd10 SNP - not present!
+kasela.tabix.cd8.lead <- kasela.tabix.cd8[kasela.tabix.cd8$SNP %in% cd10.snp, ]
+```
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+# extract summary stats for AIM2 from each data set with a tabix query
+dice.cd4.file <- paste0(dice.dir, "Chr1-CD4_NAIVE.txt.bgz")
+lead.chr <- cd10.var.summary$CHR
+lead.bp <- cd10.var.summary$BP
+
+dice.tabix <- paste0("tabix ", dice.cd4.file, " ", lead.chr, ":", lead.bp-1e5, "-", lead.bp+1e5)
+dice.tabix.call <- system(command=dice.tabix, intern=TRUE)  
+dice.tabix.cd4 <- do.call(rbind.data.frame,
+                           sapply(dice.tabix.call, FUN=function(X) strsplit(X, split="\t", fixed=TRUE)))
+colnames(dice.tabix.cd4) <- c("CHR", "BP", "SNP", "GENE", "BETA", "P")
+
+# extract the cd10 SNP - not present!
+dice.tabix.cd4.lead <- dice.tabix.cd4[dice.tabix.cd4$SNP %in% cd10.snp, ]
+```
+
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+# extract summary stats for AIM2 from each data set with a tabix query
+dice.cd8.file <- paste0(dice.dir, "Chr1-CD8_NAIVE.txt.bgz")
+lead.chr <- cd10.var.summary$CHR
+lead.bp <- cd10.var.summary$BP
+
+dice.tabix <- paste0("tabix ", dice.cd8.file, " ", lead.chr, ":", lead.bp-1e5, "-", lead.bp+1e5)
+dice.tabix.call <- system(command=dice.tabix, intern=TRUE)  
+dice.tabix.cd8 <- do.call(rbind.data.frame,
+                           sapply(dice.tabix.call, FUN=function(X) strsplit(X, split="\t", fixed=TRUE)))
+colnames(dice.tabix.cd8) <- c("CHR", "BP", "SNP", "GENE", "BETA", "P")
+
+# extract the cd10 SNP - not present!
+dice.tabix.cd8.lead <- dice.tabix.cd8[dice.tabix.cd8$SNP %in% cd10.snp, ]
+```
+
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+# extract summary stats for AIM2 from each data set with a tabix query
+dice.mono.file <- paste0(dice.dir, "Chr1-MONOCYTES.txt.bgz")
+lead.chr <- cd10.var.summary$CHR
+lead.bp <- cd10.var.summary$BP
+
+dice.tabix <- paste0("tabix ", dice.mono.file, " ", lead.chr, ":", lead.bp-1e5, "-", lead.bp+1e5)
+dice.tabix.call <- system(command=dice.tabix, intern=TRUE)  
+dice.tabix.mono <- do.call(rbind.data.frame,
+                           sapply(dice.tabix.call, FUN=function(X) strsplit(X, split="\t", fixed=TRUE)))
+colnames(dice.tabix.mono) <- c("CHR", "BP", "SNP", "GENE", "BETA", "P")
+
+# extract the cd10 SNP - not present!
+dice.tabix.mono.lead <- dice.tabix.mono[dice.tabix.mono$SNP %in% cd10.snp, ]
+```
+
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+# extract summary stats for AIM2 from each data set with a tabix query
+dice.bcell.file <- paste0(dice.dir, "Chr1-B_CELL_NAIVE.txt.bgz")
+lead.chr <- cd10.var.summary$CHR
+lead.bp <- cd10.var.summary$BP
+
+dice.tabix <- paste0("tabix ", dice.bcell.file, " ", lead.chr, ":", lead.bp-1e5, "-", lead.bp+1e5)
+dice.tabix.call <- system(command=dice.tabix, intern=TRUE)  
+dice.tabix.bcell <- do.call(rbind.data.frame,
+                           sapply(dice.tabix.call, FUN=function(X) strsplit(X, split="\t", fixed=TRUE)))
+colnames(dice.tabix.bcell) <- c("CHR", "BP", "SNP", "GENE", "BETA", "P")
+dice.tabix.bcell$SNP <- as.character(dice.tabix.bcell$SNP)
+dice.tabix.bcell$P <- as.numeric(as.character(dice.tabix.bcell$P))
+dice.tabix.bcell$BETA <- as.numeric(as.character(dice.tabix.bcell$BETA))
+
+# extract the cd10 SNP - not present!
+dice.tabix.bcell.lead <- dice.tabix.bcell[dice.tabix.bcell$SNP %in% cd10.snp, ]
+```
+
+I've extracted the _cis_-eQTL summary statistics for a number of different studies, as well as the lead SNP summary statistics. I will now iterate over these and 
+calculate the causal effect estimate for each. Only the DICE and Chen datasets contained the lead SNP for this locus.
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE, fig.height=3.75, fig.width=4.95}
+# subset the DICE B cell eQTL results to the same SNPs
+qtl.snps <- mlma.tabix.out[mlma.tabix.out$P <= 1e-5, ]$SNP
+dice.bcell.snps <- dice.tabix.bcell[dice.tabix.bcell$SNP %in% unique(qtl.snps), ]
+
+dice.bcell.list <- list()
+dice.bcell.genes <- unique(dice.bcell.snps$GENE)
+for(i in seq_along(dice.bcell.genes)){
+  i.gene <- as.character(dice.bcell.genes[i])
+  
+  # select SNPs with p<= 1e-1?
+  i.summary <- dice.bcell.snps[dice.bcell.snps$GENE %in% i.gene, ]
+  i.summary <- i.summary[i.summary$P <= 0.01, ]
+  rownames(i.summary) <- i.summary$SNP
+
+  qtl.summary <- mlma.tabix.out[mlma.tabix.out$SNP %in% i.summary$SNP, ]
+  rownames(qtl.summary) <- qtl.summary$SNP
+  redundant.snps <- rownames(qtl.summary)[duplicated(qtl.summary$P) & duplicated(qtl.summary$SE) & duplicated(qtl.summary$MAF)]
+  qtl.summary <- qtl.summary[!qtl.summary$SNP %in% redundant.snps, ]
+  i.summary <- i.summary[!i.summary$SNP %in% redundant.snps, ]
+  
+  if(nrow(i.summary) > 2){2
+    # check for the same SNPs
+    # select the matching SNPs from the varQTL
+    # if all the SNPs are good then proceed
+    if(all(rownames(i.summary) == rownames(qtl.summary))){
+      i.beta <- as.numeric(as.character(i.summary$BETA))
+      names(i.beta) <- rownames(i.summary)
+    
+      # if there is no SE then assume the p-value is derived from a standard normal
+      i.se <- as.numeric(as.character(i.summary$SE))
+      if(length(i.se) == 0){
+        i.p <- as.numeric(as.character(i.summary$P))
+        i.z <- qnorm(1-i.p)
+        i.se <- i.beta/i.z
+        names(i.se) <- rownames(i.summary)
+      }
+  
+      if(any(abs(i.beta) > 0)){
+        # create an mr_input object
+        # I think there is so little correlation it doesn't matter
+        # remove SNPs with undefined SE and/or beta=0
+        i.se <- i.se[abs(i.beta) > 0]
+        i.beta <- i.beta[abs(i.beta) > 0]
+        
+        qtl.summary <- qtl.summary[names(i.beta), ]
+        rownames(qtl.summary) <- qtl.summary$SNP
+        qtl.beta <- as.numeric(as.character(qtl.summary$BETA))
+        qtl.se <- as.numeric(as.character(qtl.summary$SE))
+        
+        # there is only limited LD information available so I should just remove
+        # SNPs that are perfectly correlated as this is redundant information
+        gene.mr.in <- mr_input(bx=i.beta, bxse=i.se, by=qtl.beta, byse=qtl.se,
+                               exposure=i.gene, outcome="CD10.var", snps=rownames(qtl.summary))
+    
+        # calculate the MR using robust Egger regression
+        gene.mr.all <- mr_egger(object=gene.mr.in, robust=TRUE)
+        i.symbol <- allgene.df$external_gene_name[allgene.df$ensembl_gene_id %in% gsub(i.gene, pattern="\\.[0-9]*", replacement="")]
+
+        if(!length(i.symbol)){
+          i.symbol <- "NA"
+        }
+        
+        if(i.symbol == "DUSP23"){
+          print(qtl.summary)
+          print(i.summary)
+        }
+        # capture the penalized robust MR-egger results
+        dice.bcell.list[[i.gene]] <- do.call(cbind.data.frame, list("Gene"=i.gene, "BETA.Causal"=gene.mr.all@Estimate, "BETA.SE"=gene.mr.all@StdError.Est,
+                                                                   "BETA.P"=gene.mr.all@Pvalue.Est, "Intercept"=gene.mr.all@Intercept,
+                                                                   "Het.Stat"=gene.mr.all@Heter.Stat[1], "Het.Stat.P"=gene.mr.all@Heter.Stat[2], 
+                                                                   "Symbol"=i.symbol))
+      }
+    }
+  }
+}
+
+# check if there are even any matching QTLs
+if(length(dice.bcell.list)){
+  dice.bcell.mr <- do.call(rbind.data.frame, dice.bcell.list)
+  # remove genes with non-estimated parameters
+  dice.bcell.mr <- dice.bcell.mr[!is.na(dice.bcell.mr$BETA.P), ]
+  dice.bcell.mr$Symbol <- as.character(dice.bcell.mr$Symbol)
+  dice.bcell.mr$Gene <- as.character(dice.bcell.mr$Gene)
+  dice.bcell.mr$Symbol[dice.bcell.mr$Symbol %in% c("NA")] <- dice.bcell.mr$Gene[dice.bcell.mr$Symbol %in% c("NA")]
+  # multiple testing adjustment
+  dice.bcell.mr$Padjust <- p.adjust(dice.bcell.mr$BETA.P)
+  dice.bcell.mr$Sig <- as.character(as.numeric(dice.bcell.mr$Padjust <= 1e-2))
+  
+  ggplot(dice.bcell.mr[!grepl(dice.bcell.mr$Symbol, pattern="ENSG"), ], 
+         aes(x=Symbol, y=BETA.Causal, fill=Sig)) +
+    geom_errorbar(mapping=aes(ymin=BETA.Causal-(2.326348*BETA.SE), ymax=BETA.Causal+(2.326348*BETA.SE))) +
+    geom_point(shape=21, size=3) +
+    scale_fill_manual(values=c("black", "red")) +
+    theme_mike() +
+    #scale_y_continuous(limits=c(-15, 15), oob=squish) +
+    coord_flip()  
+}
+```
+
+Once I've restricted the MR analysis to SNPs that are potentially valid instrumental variables then there is no overlap with the B cell eQTLs for CD10. I can try to 
+extend this to all of the B cell variability traits.
+
+## All B cell variability-QTLs
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+# extract the 200kb window around the lead SNP with an association p<=1e-6
+# this is the directory to the bgzipped and tabix-index association results files
+mlma.dir <- "TwinsUK/FCGR2A_GCTA_assoc/"
+
+# loop over each variability-QTL
+bcell.var.qtls <- varqtl.clump[varqtl.clump$Measure %in% c("Variability") &
+                                 varqtl.clump$Cohort %in% c("TwinsUK") & 
+                                 varqtl.clump$ShortCell %in% c("Bcells") &
+                                 varqtl.clump$SigTier %in% c("Top", "Second"), ]
+bcell.var.snps <- unique(bcell.var.qtls$SNP)
+all.bcell.mr.list <- list()
+all.bcell.mrplot.list <- list()
+
+for(x in seq_along(bcell.var.snps)){
+  x.snp <- bcell.var.snps[x]
+  lead.chr <- bcell.var.qtls[bcell.var.qtls$SNP %in% x.snp, ]$CHR
+  lead.bp <- bcell.var.qtls[bcell.var.qtls$SNP %in% x.snp, ]$BP
+  lead.trait <- bcell.var.qtls[bcell.var.qtls$SNP %in% x.snp, ]$FullTrait
+  short.trait <- bcell.var.qtls[bcell.var.qtls$SNP %in% x.snp, ]$HarmonTraits
+  
+  mlma.files <- list.files(mlma.dir, pattern=lead.trait)
+  if(lead.chr == 1){
+    ins.chr <- paste0("0",lead.chr)
+  } else{
+    ins.chr <- lead.chr
+  }
+  
+  mlma.file <- mlma.files[grepl(mlma.files, pattern=paste0("-chr", ins.chr, ".mlma.bgz$"))]
+  mlma.tabix <- paste0("tabix ", paste0(mlma.dir, mlma.file), " ", lead.chr, ":", lead.bp-1e5, "-", lead.bp+1e5)
+  mlma.tabix.call <- system(command=mlma.tabix, intern=TRUE)  
+  mlma.tabix.out <- do.call(rbind.data.frame,
+                            sapply(mlma.tabix.call, FUN=function(X) strsplit(X, split="\t", fixed=TRUE)))
+  colnames(mlma.tabix.out) <- c("CHR", "SNP", "BP", "A1", "A2", "MAF", "BETA", "SE", "P")
+  mlma.tabix.out$P <- as.numeric(as.character(mlma.tabix.out$P))
+  mlma.tabix.out$BETA <- as.numeric(as.character(mlma.tabix.out$BETA))
+  mlma.tabix.out$SE <- as.numeric(as.character(mlma.tabix.out$SE))
+  mlma.tabix.out$SNP <- as.character(mlma.tabix.out$SNP)
+
+  # subset the DICE B cell eQTL results to the same SNPs
+  # SNP names may not match, try on position as well
+  qtl.snps <- mlma.tabix.out[mlma.tabix.out$P <= 1e-5, ]$SNP
+  if(sum(dice.tabix.bcell$SNP %in% unique(qtl.snps)) == 0){
+    qtl.bps <- mlma.tabix.out[mlma.tabix.out$P <= 1e-5, ]$BP
+    dice.bcell.snps <- dice.tabix.bcell[dice.tabix.bcell$BP %in% unique(qtl.bps), ]
+  } else{
+    dice.bcell.snps <- dice.tabix.bcell[dice.tabix.bcell$SNP %in% unique(qtl.snps), ]
+  }
+  
+  dice.bcell.list <- list()
+  dice.bcell.genes <- unique(as.character(dice.bcell.snps$GENE))
+  
+  for(i in seq_along(dice.bcell.genes)){
+    i.gene <- as.character(dice.bcell.genes[i])
+    
+    # select SNPs with p<= 1e-1?
+    i.summary <- dice.bcell.snps[dice.bcell.snps$GENE %in% i.gene, ]
+    i.summary <- i.summary[i.summary$P <= 0.05, ]
+    rownames(i.summary) <- i.summary$SNP
+  
+    qtl.summary <- mlma.tabix.out[mlma.tabix.out$SNP %in% i.summary$SNP, ]
+    rownames(qtl.summary) <- qtl.summary$SNP
+    redundant.snps <- rownames(qtl.summary)[duplicated(qtl.summary$P) & duplicated(qtl.summary$SE) & duplicated(qtl.summary$MAF)]
+    qtl.summary <- qtl.summary[!qtl.summary$SNP %in% redundant.snps, ]
+    i.summary <- i.summary[!i.summary$SNP %in% redundant.snps, ]
+    
+  
+    # check for the same SNPs
+    # select the matching SNPs from the varQTL
+    # if all the SNPs are good then proceed
+    if(all(rownames(i.summary) == rownames(qtl.summary))){
+      i.beta <- as.numeric(as.character(i.summary$BETA))
+      names(i.beta) <- rownames(i.summary)
+    
+      # if there is no SE then assume the p-value is derived from a standard normal
+      i.se <- as.numeric(as.character(i.summary$SE))
+      if(length(i.se) == 0){
+        i.p <- as.numeric(as.character(i.summary$P))
+        i.z <- qnorm(1-i.p)
+        i.se <- i.beta/i.z
+        names(i.se) <- rownames(i.summary)
+      }
+  
+      if(any(abs(i.beta) > 0)){
+        # create an mr_input object
+        # I think there is so little correlation it doesn't matter
+        # remove SNPs with undefined SE and/or beta=0
+        i.se <- i.se[abs(i.beta) > 0]
+        i.beta <- i.beta[abs(i.beta) > 0]
+        
+        qtl.summary <- qtl.summary[names(i.beta), ]
+        rownames(qtl.summary) <- qtl.summary$SNP
+        qtl.beta <- as.numeric(as.character(qtl.summary$BETA))
+        qtl.se <- as.numeric(as.character(qtl.summary$SE))
+        
+        # there is only limited LD information available so I should just remove
+        # SNPs that are perfectly correlated as this is redundant information
+        gene.mr.in <- mr_input(bx=i.beta, bxse=i.se, by=qtl.beta, byse=qtl.se,
+                               exposure=i.gene, outcome=short.trait, snps=rownames(qtl.summary))
+    
+        # calculate the MR using robust Egger regression if there are multiple SNPs
+        # otherwise use regular MR
+        if(nrow(qtl.summary) > 2){
+          gene.mr.all <- mr_egger(object=gene.mr.in, robust=TRUE)
+          # capture the penalized robust MR-egger results
+          dice.bcell.list[[i.gene]] <- do.call(cbind.data.frame, list("Gene"=i.gene, "BETA.Causal"=gene.mr.all@Estimate, "BETA.SE"=gene.mr.all@StdError.Est,
+                                                                      "BETA.P"=gene.mr.all@Pvalue.Est, "Intercept"=gene.mr.all@Intercept,
+                                                                      "Het.Stat"=gene.mr.all@Heter.Stat[1], "Het.Stat.P"=gene.mr.all@Heter.Stat[2], 
+                                                                      "Symbol"=i.symbol, "Method"="MR-Egger"))
+        } else if(nrow(qtl.summary) != 0){
+          gene.mr.all <- mr_maxlik(object=gene.mr.in)
+          # capture the maximum likelihood esults
+          dice.bcell.list[[i.gene]] <- do.call(cbind.data.frame, list("Gene"=i.gene, "BETA.Causal"=gene.mr.all@Estimate, "BETA.SE"=gene.mr.all@StdError,
+                                                                      "BETA.P"=gene.mr.all@Pvalue, "Intercept"=1,
+                                                                      "Het.Stat"=gene.mr.all@Heter.Stat[1], "Het.Stat.P"=gene.mr.all@Heter.Stat[2], 
+                                                                      "Symbol"=i.symbol, "Method"="MR-Maxlik"))
+        }
+        
+        i.symbol <- allgene.df$external_gene_name[allgene.df$ensembl_gene_id %in% gsub(i.gene, pattern="\\.[0-9]*", replacement="")]
+
+        if(!length(i.symbol)){
+          i.symbol <- "NA"
+        }
+      }
+    }
+  }
+  
+  # check if there any matching QTLs
+  if(length(dice.bcell.list)){
+    dice.bcell.mr <- do.call(rbind.data.frame, dice.bcell.list)
+    # remove genes with non-estimated parameters
+    dice.bcell.mr <- dice.bcell.mr[!is.na(dice.bcell.mr$BETA.P), ]
+    dice.bcell.mr$Symbol <- as.character(dice.bcell.mr$Symbol)
+    dice.bcell.mr$Gene <- as.character(dice.bcell.mr$Gene)
+    dice.bcell.mr$Symbol[dice.bcell.mr$Symbol %in% c("NA")] <- dice.bcell.mr$Gene[dice.bcell.mr$Symbol %in% c("NA")]
+    # multiple testing adjustment
+    dice.bcell.mr$Padjust <- p.adjust(dice.bcell.mr$BETA.P)
+    dice.bcell.mr$Sig <- as.character(as.numeric(dice.bcell.mr$Padjust <= 0.05))
+    
+    mr.plot <- ggplot(dice.bcell.mr[!grepl(dice.bcell.mr$Symbol, pattern="ENSG"), ], 
+                      aes(x=Symbol, y=BETA.Causal, fill=Sig)) +
+      geom_errorbar(mapping=aes(ymin=BETA.Causal-(2.326348*BETA.SE), ymax=BETA.Causal+(2.326348*BETA.SE))) +
+      geom_point(shape=21, size=3) +
+      scale_fill_manual(values=c("black", "red")) +
+      theme_mike() +
+      #scale_y_continuous(limits=c(-15, 15), oob=squish) +
+      coord_flip()
+    all.bcell.mr.list[[x.snp]] <- dice.bcell.mr
+    all.bcell.mrplot.list[[x.snp]] <- mr.plot
+  }
+}
+```
+
+## CD4+ Tcells variability-QTLs
+
+I will run through all of the T cell data sets.
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+# extract the 200kb window around the lead SNP with an association p<=1e-6
+# this is the directory to the bgzipped and tabix-index association results files
+mlma.dir <- "TwinsUK/FCGR2A_GCTA_assoc/"
+
+# loop over each variability-QTL
+tcells.var.qtls <- varqtl.clump[varqtl.clump$Measure %in% c("Variability") &
+                                 varqtl.clump$Cohort %in% c("TwinsUK") & 
+                                 grepl(varqtl.clump$HarmonCell, pattern="CD4") &
+                                 varqtl.clump$SigTier %in% c("Top", "Second"), ]
+tcells.var.snps <- unique(tcells.var.qtls$SNP)
+all.tcells.mr.list <- list()
+all.tcells.mrplot.list <- list()
+
+# The Kasela paper doesn't report BETAs!?!?!?!
+tcell.data.dirs <- list("Ishigaki.CD4"=ishigaki.cd4.files, "Ishigaki.CD8"=ishigaki.cd8.files,
+                        "DICE.CD4naive"=list.files(dice.dir, pattern="CD4_NAIVE"), "DICE.CD4stim"=list.files(dice.dir, pattern="CD4_STIM"),
+                        "DICE.CD8naive"=list.files(dice.dir, pattern="CD8_NAIVE"), "DICE.CD8stim"=list.files(dice.dir, pattern="CD8_STIM"),
+                        "DICE.Tfh"=list.files(dice.dir, pattern="TFH"), "DICE.Th1"=list.files(dice.dir, pattern="TH1"),
+                        "DICE.Th17"=list.files(dice.dir, pattern="TH17"), "DICE.Th2"=list.files(dice.dir, pattern="TH2"),
+                        "DICE.Thstar"=list.files(dice.dir, pattern="THSTAR"), "DICE.TregMem"=list.files(dice.dir, pattern="TREG_MEM"))
+
+for(x in seq_along(tcells.var.snps)){
+  x.snp <- tcells.var.snps[x]
+  lead.chr <- tcells.var.qtls[tcells.var.qtls$SNP %in% x.snp, ]$CHR
+  lead.bp <- tcells.var.qtls[tcells.var.qtls$SNP %in% x.snp, ]$BP
+  lead.trait <- tcells.var.qtls[tcells.var.qtls$SNP %in% x.snp, ]$FullTrait
+  short.trait <- tcells.var.qtls[tcells.var.qtls$SNP %in% x.snp, ]$HarmonTraits
+  
+  mlma.files <- list.files(mlma.dir, pattern=lead.trait)
+  if(lead.chr == 1){
+    ins.chr <- paste0("0",lead.chr)
+  } else{
+    ins.chr <- lead.chr
+  }
+  
+  mlma.file <- mlma.files[grepl(mlma.files, pattern=paste0("-chr", ins.chr, ".mlma.bgz$"))]
+  mlma.tabix <- paste0("tabix ", paste0(mlma.dir, mlma.file), " ", lead.chr, ":", lead.bp-1e5, "-", lead.bp+1e5)
+  mlma.tabix.call <- system(command=mlma.tabix, intern=TRUE)  
+  mlma.tabix.out <- do.call(rbind.data.frame,
+                            sapply(mlma.tabix.call, FUN=function(X) strsplit(X, split="\t", fixed=TRUE)))
+  colnames(mlma.tabix.out) <- c("CHR", "SNP", "BP", "A1", "A2", "MAF", "BETA", "SE", "P")
+  mlma.tabix.out$P <- as.numeric(as.character(mlma.tabix.out$P))
+  mlma.tabix.out$BETA <- as.numeric(as.character(mlma.tabix.out$BETA))
+  mlma.tabix.out$SE <- as.numeric(as.character(mlma.tabix.out$SE))
+  mlma.tabix.out$SNP <- as.character(mlma.tabix.out$SNP)
+  mlma.tabix.out$BP <- as.numeric(as.character(mlma.tabix.out$BP))
+
+  # subset the DICE B cell eQTL results to the same SNPs
+  # SNP names may not match, try on position as well
+  qtl.snps <- mlma.tabix.out[mlma.tabix.out$P <= 1e-5, ]$SNP
+  
+  # iterate through the T cell eQTL results
+  ishigaki.t <- FALSE
+  for(q in seq_along(names(tcell.data.dirs))){
+    data.set <- names(tcell.data.dirs)[q]
+    data.files <- tcell.data.dirs[[data.set]]
+    
+    # need to treat Ishigaki and others differently
+    if(grepl(data.set, pattern="Ishigaki")){
+      ishigaki.t <- TRUE
+    } else{
+      ishigaki.t <- FALSE
+    }
+    # check for tabix file if no Ishigaki
+    qtl.files <- data.files[grepl(data.files, pattern="txt.bgz$")]
+    if(length(qtl.files) > 1 & !isTRUE(ishigaki.t)){
+      # if there are multiple files there are multiple chromosomes
+      # extract the trait name
+      cell.name <- unique(unlist(lapply(strsplit(qtl.files, fixed=TRUE, split="-"), FUN=function(L) paste0(L[2]))))
+      # check there is only one
+      if(length(cell.name) > 1){
+        cell.name <- cell.name[1]
+      }
+      eqtl.file <- paste0(dice.dir, paste0("Chr",lead.chr,"-",cell.name))
+      eqtl.tabix <- paste0("tabix ", eqtl.file, " ", lead.chr, ":", lead.bp-1e5, "-", lead.bp+1e5)
+      eqtl.tabix.call <- system(command=eqtl.tabix, intern=TRUE)
+      eqtl.tabix.out <- do.call(rbind.data.frame,
+                                sapply(eqtl.tabix.call, FUN=function(X) strsplit(X, split="\t", fixed=TRUE)))
+      
+      if(nrow(eqtl.tabix.out)){
+        colnames(eqtl.tabix.out) <- c("CHR", "BP", "SNP", "GENE", "BETA", "P")
+        eqtl.tabix.out$P <- as.numeric(as.character(eqtl.tabix.out$P))
+        eqtl.tabix.out$BETA <- as.numeric(as.character(eqtl.tabix.out$BETA))
+        eqtl.tabix.out$BP <- as.numeric(as.character(eqtl.tabix.out$BP))
+      }
+    } else if(isTRUE(ishigaki.t)){
+      # This means it is the Ishigaki data - no tabix query needed
+      chr.file <- data.files[grepl(data.files, pattern=paste0("chr", lead.chr, "_cis"))]
+      tcell.type <- gsub(data.set, pattern="Ishigaki\\.", replacement="")
+      eqtl.tabix.out <- read.table(paste0(paste0(ishigaki.dir, tcell.type, "/"), chr.file),
+                                   sep="\t", header=TRUE, stringsAsFactors=FALSE)
+      colnames(eqtl.tabix.out) <- c("SNP", "GENE", "BETA", "STAT", "P")
+      # calculate SE as beta/t-stat
+      eqtl.tabix.out$SE <- eqtl.tabix.out$BETA/eqtl.tabix.out$STAT
+    }
+    if(sum(eqtl.tabix.out$SNP %in% unique(qtl.snps)) == 0){
+      qtl.bps <- mlma.tabix.out[mlma.tabix.out$P <= 1e-5, ]$BP
+      # if no BP info then skip
+      if(grepl(colnames(eqtl.tabix.out), pattern="BP")){
+        eqtl.tabix.snps <- eqtl.tabix.out[eqtl.tabix.out$BP %in% unique(qtl.bps), ]
+      } else{
+        eqtl.tabix.snps <- c()
+      }
+    }
+    else{
+      eqtl.tabix.snps <- eqtl.tabix.out[eqtl.tabix.out$SNP %in% unique(qtl.snps), ]
+    }
+    
+    eqtl.tabix.list <- list()
+    eqtl.tabix.genes <- unique(as.character(eqtl.tabix.snps$GENE))
+        
+    for(i in seq_along(eqtl.tabix.genes)){
+      i.gene <- as.character(eqtl.tabix.genes[i])
+          
+      # select SNPs with p<= 1e-1?
+      i.summary <- eqtl.tabix.snps[eqtl.tabix.snps$GENE %in% i.gene, ]
+      i.summary <- i.summary[i.summary$P <= 0.05, ]
+      rownames(i.summary) <- i.summary$SNP
+      
+      # remove SNPs with redundant information
+      redundant.eqtl.snps <- rownames(i.summary)[duplicated(i.summary$P) & duplicated(i.summary$BETA)]
+      i.summary <- i.summary[!i.summary$SNP %in% redundant.eqtl.snps, ]
+      
+      qtl.summary <- mlma.tabix.out[mlma.tabix.out$SNP %in% i.summary$SNP, ]
+      rownames(qtl.summary) <- qtl.summary$SNP
+      redundant.snps <- rownames(qtl.summary)[duplicated(qtl.summary$P) & duplicated(qtl.summary$SE) & duplicated(qtl.summary$MAF)]
+      qtl.summary <- qtl.summary[!qtl.summary$SNP %in% redundant.snps, ]
+      i.summary <- i.summary[!i.summary$SNP %in% redundant.snps, ]
+    
+      # check for the same SNPs
+      # select the matching SNPs from the varQTL
+      # if all the SNPs are good then proceed
+      if(all(rownames(i.summary) == rownames(qtl.summary))){
+        i.beta <- as.numeric(as.character(i.summary$BETA))
+        names(i.beta) <- rownames(i.summary)
+      
+        # if there is no SE then assume the p-value is derived from a standard normal
+        i.se <- as.numeric(as.character(i.summary$SE))
+        if(length(i.se) == 0){
+          i.p <- as.numeric(as.character(i.summary$P))
+          i.z <- qnorm(1-i.p)
+          i.se <- i.beta/i.z
+          names(i.se) <- rownames(i.summary)
+        }
+    
+        if(any(abs(i.beta) > 0)){
+          # create an mr_input object
+          # I think there is so little correlation it doesn't matter
+          # remove SNPs with undefined SE and/or beta=0
+          i.se <- i.se[abs(i.beta) > 0]
+          i.beta <- i.beta[abs(i.beta) > 0]
+          
+          qtl.summary <- qtl.summary[names(i.beta), ]
+          rownames(qtl.summary) <- qtl.summary$SNP
+          qtl.beta <- as.numeric(as.character(qtl.summary$BETA))
+          qtl.se <- as.numeric(as.character(qtl.summary$SE))
+          
+          # there is only limited LD information available so I should just remove
+          # SNPs that are perfectly correlated as this is redundant information
+          gene.mr.in <- mr_input(bx=i.beta, bxse=i.se, by=qtl.beta, byse=qtl.se,
+                                 exposure=i.gene, outcome=short.trait, snps=rownames(qtl.summary))
+      
+          # calculate the MR using robust Egger regression if there are multiple SNPs
+          # otherwise use regular MR
+          if(nrow(qtl.summary) > 2){
+            gene.mr.all <- mr_egger(object=gene.mr.in, robust=TRUE)
+            # capture the penalized robust MR-egger results
+            eqtl.tabix.list[[i.gene]] <- do.call(cbind.data.frame, list("Gene"=i.gene, "BETA.Causal"=gene.mr.all@Estimate,
+                                                                        "BETA.SE"=gene.mr.all@StdError.Est,
+                                                                        "BETA.P"=gene.mr.all@Pvalue.Est, "Intercept"=gene.mr.all@Intercept,
+                                                                        "Het.Stat"=gene.mr.all@Heter.Stat[1], "Het.Stat.P"=gene.mr.all@Heter.Stat[2],
+                                                                        "Symbol"=i.symbol, "Method"="MR-Egger"))
+          } else if(nrow(qtl.summary) != 0){
+            # is there a robust estimator for this method?
+            gene.mr.all <- mr_maxlik(object=gene.mr.in)
+            # capture the maximum likelihood esults
+            eqtl.tabix.list[[i.gene]] <- do.call(cbind.data.frame, list("Gene"=i.gene, "BETA.Causal"=gene.mr.all@Estimate, "BETA.SE"=gene.mr.all@StdError,
+                                                                        "BETA.P"=gene.mr.all@Pvalue, "Intercept"=1,
+                                                                        "Het.Stat"=gene.mr.all@Heter.Stat[1], "Het.Stat.P"=gene.mr.all@Heter.Stat[2], 
+                                                                        "Symbol"=i.symbol, "Method"="MR-Maxlik"))
+          }
+          
+          i.symbol <- allgene.df$external_gene_name[allgene.df$ensembl_gene_id %in% gsub(i.gene, pattern="\\.[0-9]*", replacement="")]
+  
+          if(!length(i.symbol)){
+            i.symbol <- "NA"
+          }
+        }
+      }
+    }
+    
+    if(length(eqtl.tabix.list)){
+      eqtl.tabix.mr <- do.call(rbind.data.frame, eqtl.tabix.list)
+      # remove genes with non-estimated parameters
+      eqtl.tabix.mr <- eqtl.tabix.mr[!is.na(eqtl.tabix.mr$BETA.P), ]
+      eqtl.tabix.mr$Symbol <- as.character(eqtl.tabix.mr$Symbol)
+      eqtl.tabix.mr$Gene <- as.character(eqtl.tabix.mr$Gene)
+      eqtl.tabix.mr$Symbol[eqtl.tabix.mr$Symbol %in% c("NA")] <- eqtl.tabix.mr$Gene[eqtl.tabix.mr$Symbol %in% c("NA")]
+      # multiple testing adjustment
+      eqtl.tabix.mr$Padjust <- p.adjust(eqtl.tabix.mr$BETA.P)
+      eqtl.tabix.mr$Sig <- as.character(as.numeric(eqtl.tabix.mr$Padjust <= 0.05))
+      
+      mr.plot <- ggplot(eqtl.tabix.mr, 
+                        aes(x=Symbol, y=BETA.Causal, fill=Sig)) +
+        geom_errorbar(mapping=aes(ymin=BETA.Causal-(2.326348*BETA.SE), ymax=BETA.Causal+(2.326348*BETA.SE))) +
+        geom_point(shape=21, size=3) +
+        scale_fill_manual(values=c("black", "red")) +
+        theme_mike() +
+        #scale_y_continuous(limits=c(-15, 15), oob=squish) +
+        coord_flip()
+      all.tcells.mr.list[[paste(x.snp, data.set, sep="_")]] <- eqtl.tabix.mr
+      all.tcells.mrplot.list[[paste(x.snp, data.set, sep="_")]] <- mr.plot
+    }
+  }
+}
+
+tcell.mr.df <- do.call(rbind.data.frame,
+                       all.tcells.mr.list)
+tcell.mr.df$SNP <- unlist(lapply(strsplit(rownames(tcell.mr.df), split="_", fixed=TRUE),
+                                 FUN=function(X) paste0(X[1])))
+tcell.mr.df$Dataset <- unlist(lapply(strsplit(unlist(lapply(strsplit(rownames(tcell.mr.df), split="_", fixed=TRUE),
+                                                            FUN=function(X) paste0(X[2]))),
+                                              split=".", fixed=TRUE),
+                                     FUN=function(G) paste(G[1:2], collapse=".")))
+
+write.table(tcell.mr.df,
+            file="MR_analysis/TwinsUK_CD4.Tcell-MR.txt",
+            sep="\t", quote=FALSE, row.names=FALSE)
+```
+
+Now do this for CD8+ T cells
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+# extract the 200kb window around the lead SNP with an association p<=1e-6
+# this is the directory to the bgzipped and tabix-index association results files
+mlma.dir <- "TwinsUK/FCGR2A_GCTA_assoc/"
+
+# loop over each variability-QTL
+tcells.var.qtls <- varqtl.clump[varqtl.clump$Measure %in% c("Variability") &
+                                 varqtl.clump$Cohort %in% c("TwinsUK") & 
+                                 grepl(varqtl.clump$HarmonCell, pattern="CD8") &
+                                 varqtl.clump$SigTier %in% c("Top", "Second"), ]
+tcells.var.snps <- unique(tcells.var.qtls$SNP)
+all.tcells.mr.list <- list()
+all.tcells.mrplot.list <- list()
+
+# The Kasela paper doesn't report BETAs!?!?!?!
+tcell.data.dirs <- list("Ishigaki.CD4"=ishigaki.cd4.files, "Ishigaki.CD8"=ishigaki.cd8.files,
+                        "DICE.CD4naive"=list.files(dice.dir, pattern="CD4_NAIVE"), "DICE.CD4stim"=list.files(dice.dir, pattern="CD4_STIM"),
+                        "DICE.CD8naive"=list.files(dice.dir, pattern="CD8_NAIVE"), "DICE.CD8stim"=list.files(dice.dir, pattern="CD8_STIM"),
+                        "DICE.Tfh"=list.files(dice.dir, pattern="TFH"), "DICE.Th1"=list.files(dice.dir, pattern="TH1"),
+                        "DICE.Th17"=list.files(dice.dir, pattern="TH17"), "DICE.Th2"=list.files(dice.dir, pattern="TH2"),
+                        "DICE.Thstar"=list.files(dice.dir, pattern="THSTAR"), "DICE.TregMem"=list.files(dice.dir, pattern="TREG_MEM"))
+
+for(x in seq_along(tcells.var.snps)){
+  x.snp <- tcells.var.snps[x]
+  lead.chr <- tcells.var.qtls[tcells.var.qtls$SNP %in% x.snp, ]$CHR
+  lead.bp <- tcells.var.qtls[tcells.var.qtls$SNP %in% x.snp, ]$BP
+  lead.trait <- tcells.var.qtls[tcells.var.qtls$SNP %in% x.snp, ]$FullTrait
+  short.trait <- tcells.var.qtls[tcells.var.qtls$SNP %in% x.snp, ]$HarmonTraits
+  
+  mlma.files <- list.files(mlma.dir, pattern=lead.trait)
+  if(lead.chr == 1){
+    ins.chr <- paste0("0",lead.chr)
+  } else{
+    ins.chr <- lead.chr
+  }
+  
+  mlma.file <- mlma.files[grepl(mlma.files, pattern=paste0("-chr", ins.chr, ".mlma.bgz$"))]
+  mlma.tabix <- paste0("tabix ", paste0(mlma.dir, mlma.file), " ", lead.chr, ":", lead.bp-1e5, "-", lead.bp+1e5)
+  mlma.tabix.call <- system(command=mlma.tabix, intern=TRUE)  
+  mlma.tabix.out <- do.call(rbind.data.frame,
+                            sapply(mlma.tabix.call, FUN=function(X) strsplit(X, split="\t", fixed=TRUE)))
+  colnames(mlma.tabix.out) <- c("CHR", "SNP", "BP", "A1", "A2", "MAF", "BETA", "SE", "P")
+  mlma.tabix.out$P <- as.numeric(as.character(mlma.tabix.out$P))
+  mlma.tabix.out$BETA <- as.numeric(as.character(mlma.tabix.out$BETA))
+  mlma.tabix.out$SE <- as.numeric(as.character(mlma.tabix.out$SE))
+  mlma.tabix.out$SNP <- as.character(mlma.tabix.out$SNP)
+  mlma.tabix.out$BP <- as.numeric(as.character(mlma.tabix.out$BP))
+
+  # subset the DICE B cell eQTL results to the same SNPs
+  # SNP names may not match, try on position as well
+  qtl.snps <- mlma.tabix.out[mlma.tabix.out$P <= 1e-5, ]$SNP
+  
+  # iterate through the T cell eQTL results
+  ishigaki.t <- FALSE
+  for(q in seq_along(names(tcell.data.dirs))){
+    data.set <- names(tcell.data.dirs)[q]
+    data.files <- tcell.data.dirs[[data.set]]
+    
+    # need to treat Ishigaki and others differently
+    if(grepl(data.set, pattern="Ishigaki")){
+      ishigaki.t <- TRUE
+    } else{
+      ishigaki.t <- FALSE
+    }
+    # check for tabix file if no Ishigaki
+    qtl.files <- data.files[grepl(data.files, pattern="txt.bgz$")]
+    if(length(qtl.files) > 1 & !isTRUE(ishigaki.t)){
+      # if there are multiple files there are multiple chromosomes
+      # extract the trait name
+      cell.name <- unique(unlist(lapply(strsplit(qtl.files, fixed=TRUE, split="-"), FUN=function(L) paste0(L[2]))))
+      # check there is only one
+      if(length(cell.name) > 1){
+        cell.name <- cell.name[1]
+      }
+      eqtl.file <- paste0(dice.dir, paste0("Chr",lead.chr,"-",cell.name))
+      eqtl.tabix <- paste0("tabix ", eqtl.file, " ", lead.chr, ":", lead.bp-1e5, "-", lead.bp+1e5)
+      eqtl.tabix.call <- system(command=eqtl.tabix, intern=TRUE)
+      eqtl.tabix.out <- do.call(rbind.data.frame,
+                                sapply(eqtl.tabix.call, FUN=function(X) strsplit(X, split="\t", fixed=TRUE)))
+      
+      if(nrow(eqtl.tabix.out)){
+        colnames(eqtl.tabix.out) <- c("CHR", "BP", "SNP", "GENE", "BETA", "P")
+        eqtl.tabix.out$P <- as.numeric(as.character(eqtl.tabix.out$P))
+        eqtl.tabix.out$BETA <- as.numeric(as.character(eqtl.tabix.out$BETA))
+        eqtl.tabix.out$BP <- as.numeric(as.character(eqtl.tabix.out$BP))
+      }
+    } else if(isTRUE(ishigaki.t)){
+      # This means it is the Ishigaki data - no tabix query needed
+      chr.file <- data.files[grepl(data.files, pattern=paste0("chr", lead.chr, "_cis"))]
+      tcell.type <- gsub(data.set, pattern="Ishigaki\\.", replacement="")
+      eqtl.tabix.out <- read.table(paste0(paste0(ishigaki.dir, tcell.type, "/"), chr.file),
+                                   sep="\t", header=TRUE, stringsAsFactors=FALSE)
+      colnames(eqtl.tabix.out) <- c("SNP", "GENE", "BETA", "STAT", "P")
+      # calculate SE as beta/t-stat
+      eqtl.tabix.out$SE <- eqtl.tabix.out$BETA/eqtl.tabix.out$STAT
+    }
+    
+    if(sum(eqtl.tabix.out$SNP %in% unique(qtl.snps)) == 0 & nrow(eqtl.tabix.out)){
+      qtl.bps <- mlma.tabix.out[mlma.tabix.out$P <= 1e-5, ]$BP
+      # if no BP info then skip
+      if(grepl(colnames(eqtl.tabix.out), pattern="BP")){
+        eqtl.tabix.snps <- eqtl.tabix.out[eqtl.tabix.out$BP %in% unique(qtl.bps), ]
+      } else{
+        eqtl.tabix.snps <- c()
+      }
+    }
+    else{
+      eqtl.tabix.snps <- eqtl.tabix.out[eqtl.tabix.out$SNP %in% unique(qtl.snps), ]
+    }
+    
+    eqtl.tabix.list <- list()
+    eqtl.tabix.genes <- unique(as.character(eqtl.tabix.snps$GENE))
+        
+    for(i in seq_along(eqtl.tabix.genes)){
+      i.gene <- as.character(eqtl.tabix.genes[i])
+          
+      # select SNPs with p<= 1e-1?
+      i.summary <- eqtl.tabix.snps[eqtl.tabix.snps$GENE %in% i.gene, ]
+      i.summary <- i.summary[i.summary$P <= 0.05, ]
+      rownames(i.summary) <- i.summary$SNP
+      
+      # remove SNPs with redundant information
+      redundant.eqtl.snps <- rownames(i.summary)[duplicated(i.summary$P) & duplicated(i.summary$BETA)]
+      i.summary <- i.summary[!i.summary$SNP %in% redundant.eqtl.snps, ]
+      
+      qtl.summary <- mlma.tabix.out[mlma.tabix.out$SNP %in% i.summary$SNP, ]
+      rownames(qtl.summary) <- qtl.summary$SNP
+      redundant.snps <- rownames(qtl.summary)[duplicated(qtl.summary$P) & duplicated(qtl.summary$SE) & duplicated(qtl.summary$MAF)]
+      qtl.summary <- qtl.summary[!qtl.summary$SNP %in% redundant.snps, ]
+      i.summary <- i.summary[!i.summary$SNP %in% redundant.snps, ]
+    
+      # check for the same SNPs
+      # select the matching SNPs from the varQTL
+      # if all the SNPs are good then proceed
+      if(all(rownames(i.summary) == rownames(qtl.summary))){
+        i.beta <- as.numeric(as.character(i.summary$BETA))
+        names(i.beta) <- rownames(i.summary)
+      
+        # if there is no SE then assume the p-value is derived from a standard normal
+        i.se <- as.numeric(as.character(i.summary$SE))
+        if(length(i.se) == 0){
+          i.p <- as.numeric(as.character(i.summary$P))
+          i.z <- qnorm(1-i.p)
+          i.se <- i.beta/i.z
+          names(i.se) <- rownames(i.summary)
+        }
+    
+        if(any(abs(i.beta) > 0)){
+          # create an mr_input object
+          # I think there is so little correlation it doesn't matter
+          # remove SNPs with undefined SE and/or beta=0
+          i.se <- i.se[abs(i.beta) > 0]
+          i.beta <- i.beta[abs(i.beta) > 0]
+          
+          qtl.summary <- qtl.summary[names(i.beta), ]
+          rownames(qtl.summary) <- qtl.summary$SNP
+          qtl.beta <- as.numeric(as.character(qtl.summary$BETA))
+          qtl.se <- as.numeric(as.character(qtl.summary$SE))
+          
+          # there is only limited LD information available so I should just remove
+          # SNPs that are perfectly correlated as this is redundant information
+          gene.mr.in <- mr_input(bx=i.beta, bxse=i.se, by=qtl.beta, byse=qtl.se,
+                                 exposure=i.gene, outcome=short.trait, snps=rownames(qtl.summary))
+      
+          # calculate the MR using robust Egger regression if there are multiple SNPs
+          # otherwise use regular MR
+          if(nrow(qtl.summary) > 2){
+            gene.mr.all <- mr_egger(object=gene.mr.in, robust=TRUE)
+            # capture the penalized robust MR-egger results
+            eqtl.tabix.list[[i.gene]] <- do.call(cbind.data.frame, list("Gene"=i.gene, "BETA.Causal"=gene.mr.all@Estimate,
+                                                                        "BETA.SE"=gene.mr.all@StdError.Est,
+                                                                        "BETA.P"=gene.mr.all@Pvalue.Est, "Intercept"=gene.mr.all@Intercept,
+                                                                        "Het.Stat"=gene.mr.all@Heter.Stat[1], "Het.Stat.P"=gene.mr.all@Heter.Stat[2],
+                                                                        "Symbol"=i.symbol, "Method"="MR-Egger"))
+          } else if(nrow(qtl.summary) != 0){
+            # is there a robust estimator for this method?
+            gene.mr.all <- mr_maxlik(object=gene.mr.in)
+            # capture the maximum likelihood esults
+            eqtl.tabix.list[[i.gene]] <- do.call(cbind.data.frame, list("Gene"=i.gene, "BETA.Causal"=gene.mr.all@Estimate, "BETA.SE"=gene.mr.all@StdError,
+                                                                        "BETA.P"=gene.mr.all@Pvalue, "Intercept"=1,
+                                                                        "Het.Stat"=gene.mr.all@Heter.Stat[1], "Het.Stat.P"=gene.mr.all@Heter.Stat[2], 
+                                                                        "Symbol"=i.symbol, "Method"="MR-Maxlik"))
+          }
+          
+          i.symbol <- allgene.df$external_gene_name[allgene.df$ensembl_gene_id %in% gsub(i.gene, pattern="\\.[0-9]*", replacement="")]
+  
+          if(!length(i.symbol)){
+            i.symbol <- "NA"
+          }
+        }
+      }
+    }
+    
+    if(length(eqtl.tabix.list)){
+      eqtl.tabix.mr <- do.call(rbind.data.frame, eqtl.tabix.list)
+      # remove genes with non-estimated parameters
+      eqtl.tabix.mr <- eqtl.tabix.mr[!is.na(eqtl.tabix.mr$BETA.P), ]
+      eqtl.tabix.mr$Symbol <- as.character(eqtl.tabix.mr$Symbol)
+      eqtl.tabix.mr$Gene <- as.character(eqtl.tabix.mr$Gene)
+      eqtl.tabix.mr$Symbol[eqtl.tabix.mr$Symbol %in% c("NA")] <- eqtl.tabix.mr$Gene[eqtl.tabix.mr$Symbol %in% c("NA")]
+      # multiple testing adjustment
+      eqtl.tabix.mr$Padjust <- p.adjust(eqtl.tabix.mr$BETA.P)
+      eqtl.tabix.mr$Sig <- as.character(as.numeric(eqtl.tabix.mr$Padjust <= 0.05))
+      
+      mr.plot <- ggplot(eqtl.tabix.mr, 
+                        aes(x=Symbol, y=BETA.Causal, fill=Sig)) +
+        geom_errorbar(mapping=aes(ymin=BETA.Causal-(2.326348*BETA.SE), ymax=BETA.Causal+(2.326348*BETA.SE))) +
+        geom_point(shape=21, size=3) +
+        scale_fill_manual(values=c("black", "red")) +
+        theme_mike() +
+        #scale_y_continuous(limits=c(-15, 15), oob=squish) +
+        coord_flip()
+      all.tcells.mr.list[[paste(x.snp, data.set, sep="_")]] <- eqtl.tabix.mr
+      all.tcells.mrplot.list[[paste(x.snp, data.set, sep="_")]] <- mr.plot
+    }
+  }
+}
+
+tcell.mr.df <- do.call(rbind.data.frame,
+                       all.tcells.mr.list)
+tcell.mr.df$SNP <- unlist(lapply(strsplit(rownames(tcell.mr.df), split="_", fixed=TRUE),
+                                 FUN=function(X) paste0(X[1])))
+tcell.mr.df$Dataset <- unlist(lapply(strsplit(unlist(lapply(strsplit(rownames(tcell.mr.df), split="_", fixed=TRUE),
+                                                            FUN=function(X) paste0(X[2]))),
+                                              split=".", fixed=TRUE),
+                                     FUN=function(G) paste(G[1:2], collapse=".")))
+
+write.table(tcell.mr.df,
+            file="MR_analysis/TwinsUK_CD8.Tcell-MR.txt",
+            sep="\t", quote=FALSE, row.names=FALSE)
+```
+
+
+
+
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+# extract the 200kb window around the lead SNP with an association p<=1e-6
+# this is the directory to the bgzipped and tabix-index association results files
+mlma.dir <- "TwinsUK/GCTA_assoc/"
+
+# loop over each variability-QTL
+bcells.var.qtls <- varqtl.clump[varqtl.clump$Measure %in% c("Variability") &
+                                 varqtl.clump$Cohort %in% c("TwinsUK") & 
+                                 grepl(varqtl.clump$HarmonCell, pattern="Bcell") &
+                                 varqtl.clump$SigTier %in% c("Top", "Second"), ]
+bcells.var.snps <- unique(bcells.var.qtls$SNP)
+all.bcells.mr.list <- list()
+all.bcells.mrplot.list <- list()
+
+# The Kasela paper doesn't report BETAs!?!?!?!
+ishigaki.bcell.files  <- list.files(paste0(ishigaki.dir, "B"))
+bcell.data.dirs <- list("DICE.Bcellnaive"=list.files(dice.dir, pattern="B_CELL_NAIVE"), 
+                        "Ishigaki.B"=ishigaki.bcell.files)
+
+for(x in seq_along(bcells.var.snps)){
+  x.snp <- bcells.var.snps[x]
+  lead.chr <- bcells.var.qtls[bcells.var.qtls$SNP %in% x.snp, ]$CHR
+  lead.bp <- bcells.var.qtls[bcells.var.qtls$SNP %in% x.snp, ]$BP
+  lead.trait <- bcells.var.qtls[bcells.var.qtls$SNP %in% x.snp, ]$FullTrait
+  short.trait <- bcells.var.qtls[bcells.var.qtls$SNP %in% x.snp, ]$HarmonTraits
+  
+  mlma.files <- list.files(mlma.dir, pattern=lead.trait)
+  if(lead.chr == 1){
+    ins.chr <- paste0("0",lead.chr)
+  } else{
+    ins.chr <- lead.chr
+  }
+  
+  mlma.file <- mlma.files[grepl(mlma.files, pattern=paste0("-chr", ins.chr, ".mlma.bgz$"))]
+  mlma.tabix <- paste0("tabix ", paste0(mlma.dir, mlma.file), " ", lead.chr, ":", lead.bp-1e5, "-", lead.bp+1e5)
+  mlma.tabix.call <- system(command=mlma.tabix, intern=TRUE)  
+  mlma.tabix.out <- do.call(rbind.data.frame,
+                            sapply(mlma.tabix.call, FUN=function(X) strsplit(X, split="\t", fixed=TRUE)))
+  colnames(mlma.tabix.out) <- c("CHR", "SNP", "BP", "A1", "A2", "MAF", "BETA", "SE", "P")
+  mlma.tabix.out$P <- as.numeric(as.character(mlma.tabix.out$P))
+  mlma.tabix.out$BETA <- as.numeric(as.character(mlma.tabix.out$BETA))
+  mlma.tabix.out$SE <- as.numeric(as.character(mlma.tabix.out$SE))
+  mlma.tabix.out$SNP <- as.character(mlma.tabix.out$SNP)
+  mlma.tabix.out$BP <- as.numeric(as.character(mlma.tabix.out$BP))
+
+  # subset the DICE B cell eQTL results to the same SNPs
+  # SNP names may not match, try on position as well
+  qtl.snps <- mlma.tabix.out[mlma.tabix.out$P <= 1e-5, ]$SNP
+  
+  # iterate through the T cell eQTL results
+  ishigaki.t <- FALSE
+  for(q in seq_along(names(bcell.data.dirs))){
+    data.set <- names(bcell.data.dirs)[q]
+    data.files <- bcell.data.dirs[[data.set]]
+    
+    # need to treat Ishigaki and others differently
+    if(grepl(data.set, pattern="Ishigaki")){
+      ishigaki.t <- TRUE
+    } else{
+      ishigaki.t <- FALSE
+    }
+    # check for tabix file if no Ishigaki
+    qtl.files <- data.files[grepl(data.files, pattern="txt.bgz$")]
+    if(length(qtl.files) > 1 & !isTRUE(ishigaki.t)){
+      # if there are multiple files there are multiple chromosomes
+      # extract the trait name
+      cell.name <- unique(unlist(lapply(strsplit(qtl.files, fixed=TRUE, split="-"), FUN=function(L) paste0(L[2]))))
+      # check there is only one
+      if(length(cell.name) > 1){
+        cell.name <- cell.name[1]
+      }
+      eqtl.file <- paste0(dice.dir, paste0("Chr",lead.chr,"-",cell.name))
+      eqtl.tabix <- paste0("tabix ", eqtl.file, " ", lead.chr, ":", lead.bp-1e5, "-", lead.bp+1e5)
+      eqtl.tabix.call <- system(command=eqtl.tabix, intern=TRUE)
+      eqtl.tabix.out <- do.call(rbind.data.frame,
+                                sapply(eqtl.tabix.call, FUN=function(X) strsplit(X, split="\t", fixed=TRUE)))
+      
+      if(nrow(eqtl.tabix.out)){
+        colnames(eqtl.tabix.out) <- c("CHR", "BP", "SNP", "GENE", "BETA", "P")
+        eqtl.tabix.out$P <- as.numeric(as.character(eqtl.tabix.out$P))
+        eqtl.tabix.out$BETA <- as.numeric(as.character(eqtl.tabix.out$BETA))
+        eqtl.tabix.out$BP <- as.numeric(as.character(eqtl.tabix.out$BP))
+      }
+    } else if(isTRUE(ishigaki.t)){
+      # This means it is the Ishigaki data - no tabix query needed
+      chr.file <- data.files[grepl(data.files, pattern=paste0("chr", lead.chr, "_cis"))]
+      bcell.type <- gsub(data.set, pattern="Ishigaki\\.", replacement="")
+      eqtl.tabix.out <- read.table(paste0(paste0(ishigaki.dir, bcell.type, "/"), chr.file),
+                                   sep="\t", header=TRUE, stringsAsFactors=FALSE)
+      colnames(eqtl.tabix.out) <- c("SNP", "GENE", "BETA", "STAT", "P")
+      # calculate SE as beta/t-stat
+      eqtl.tabix.out$SE <- eqtl.tabix.out$BETA/eqtl.tabix.out$STAT
+    }
+    
+    if(sum(eqtl.tabix.out$SNP %in% unique(qtl.snps)) == 0 & nrow(eqtl.tabix.out)){
+      qtl.bps <- mlma.tabix.out[mlma.tabix.out$P <= 1e-5, ]$BP
+      # if no BP info then skip
+      if(grepl(colnames(eqtl.tabix.out), pattern="BP")){
+        eqtl.tabix.snps <- eqtl.tabix.out[eqtl.tabix.out$BP %in% unique(qtl.bps), ]
+      } else{
+        eqtl.tabix.snps <- c()
+      }
+    }
+    else{
+      eqtl.tabix.snps <- eqtl.tabix.out[eqtl.tabix.out$SNP %in% unique(qtl.snps), ]
+    }
+    
+    eqtl.tabix.list <- list()
+    eqtl.tabix.genes <- unique(as.character(eqtl.tabix.snps$GENE))
+        
+    for(i in seq_along(eqtl.tabix.genes)){
+      i.gene <- as.character(eqtl.tabix.genes[i])
+          
+      # select SNPs with p<= 1e-1?
+      i.summary <- eqtl.tabix.snps[eqtl.tabix.snps$GENE %in% i.gene, ]
+      i.summary <- i.summary[i.summary$P <= 0.05, ]
+      rownames(i.summary) <- i.summary$SNP
+      
+      # remove SNPs with redundant information
+      redundant.eqtl.snps <- rownames(i.summary)[duplicated(i.summary$P) & duplicated(i.summary$BETA)]
+      i.summary <- i.summary[!i.summary$SNP %in% redundant.eqtl.snps, ]
+      
+      qtl.summary <- mlma.tabix.out[mlma.tabix.out$SNP %in% i.summary$SNP, ]
+      rownames(qtl.summary) <- qtl.summary$SNP
+      redundant.snps <- rownames(qtl.summary)[duplicated(qtl.summary$P) & duplicated(qtl.summary$SE) & duplicated(qtl.summary$MAF)]
+      qtl.summary <- qtl.summary[!qtl.summary$SNP %in% redundant.snps, ]
+      i.summary <- i.summary[!i.summary$SNP %in% redundant.snps, ]
+    
+      # check for the same SNPs
+      # select the matching SNPs from the varQTL
+      # if all the SNPs are good then proceed
+      if(all(rownames(i.summary) == rownames(qtl.summary))){
+        i.beta <- as.numeric(as.character(i.summary$BETA))
+        names(i.beta) <- rownames(i.summary)
+      
+        # if there is no SE then assume the p-value is derived from a standard normal
+        i.se <- as.numeric(as.character(i.summary$SE))
+        if(length(i.se) == 0){
+          i.p <- as.numeric(as.character(i.summary$P))
+          i.z <- qnorm(1-i.p)
+          i.se <- i.beta/i.z
+          names(i.se) <- rownames(i.summary)
+        }
+    
+        if(any(abs(i.beta) > 0)){
+          # create an mr_input object
+          # I think there is so little correlation it doesn't matter
+          # remove SNPs with undefined SE and/or beta=0
+          i.se <- i.se[abs(i.beta) > 0]
+          i.beta <- i.beta[abs(i.beta) > 0]
+          
+          qtl.summary <- qtl.summary[names(i.beta), ]
+          rownames(qtl.summary) <- qtl.summary$SNP
+          qtl.beta <- as.numeric(as.character(qtl.summary$BETA))
+          qtl.se <- as.numeric(as.character(qtl.summary$SE))
+          
+          # there is only limited LD information available so I should just remove
+          # SNPs that are perfectly correlated as this is redundant information
+          gene.mr.in <- mr_input(bx=i.beta, bxse=i.se, by=qtl.beta, byse=qtl.se,
+                                 exposure=i.gene, outcome=short.trait, snps=rownames(qtl.summary))
+      
+          # calculate the MR using robust Egger regression if there are multiple SNPs
+          # otherwise use regular MR
+          i.symbol <- allgene.df$external_gene_name[allgene.df$ensembl_gene_id %in% gsub(i.gene, pattern="\\.[0-9]*", replacement="")]
+          
+          if(!length(i.symbol)){
+            i.symbol <- "NA"
+          }
+          
+          if(nrow(qtl.summary) > 2){
+            gene.mr.all <- mr_egger(object=gene.mr.in, robust=TRUE)
+            # capture the penalized robust MR-egger results
+            eqtl.tabix.list[[i.gene]] <- do.call(cbind.data.frame, list("Gene"=i.gene, "BETA.Causal"=gene.mr.all@Estimate,
+                                                                        "BETA.SE"=gene.mr.all@StdError.Est,
+                                                                        "BETA.P"=gene.mr.all@Pvalue.Est, "Intercept"=gene.mr.all@Intercept,
+                                                                        "SNP"=x.snp, "Dataset"=data.set,
+                                                                        "Het.Stat"=gene.mr.all@Heter.Stat[1], "Het.Stat.P"=gene.mr.all@Heter.Stat[2],
+                                                                        "Symbol"=i.symbol, "Method"="MR-Egger"))
+          } else if(nrow(qtl.summary) != 0){
+            # is there a robust estimator for this method?
+            gene.mr.all <- mr_maxlik(object=gene.mr.in)
+            # capture the maximum likelihood esults
+            eqtl.tabix.list[[i.gene]] <- do.call(cbind.data.frame, list("Gene"=i.gene, "BETA.Causal"=gene.mr.all@Estimate, "BETA.SE"=gene.mr.all@StdError,
+                                                                        "BETA.P"=gene.mr.all@Pvalue, "Intercept"=1,
+                                                                        "SNP"=x.snp, "Dataset"=data.set,
+                                                                        "Het.Stat"=gene.mr.all@Heter.Stat[1], "Het.Stat.P"=gene.mr.all@Heter.Stat[2], 
+                                                                        "Symbol"=i.symbol, "Method"="MR-Maxlik"))
+          }
+        }
+      }
+    }
+    
+    if(length(eqtl.tabix.list)){
+      eqtl.tabix.mr <- do.call(rbind.data.frame, eqtl.tabix.list)
+      # remove genes with non-estimated parameters
+      eqtl.tabix.mr <- eqtl.tabix.mr[!is.na(eqtl.tabix.mr$BETA.P), ]
+      eqtl.tabix.mr$Symbol <- as.character(eqtl.tabix.mr$Symbol)
+      eqtl.tabix.mr$Gene <- as.character(eqtl.tabix.mr$Gene)
+      eqtl.tabix.mr$Symbol[eqtl.tabix.mr$Symbol %in% c("NA")] <- eqtl.tabix.mr$Gene[eqtl.tabix.mr$Symbol %in% c("NA")]
+      # multiple testing adjustment
+      eqtl.tabix.mr$Padjust <- p.adjust(eqtl.tabix.mr$BETA.P)
+      eqtl.tabix.mr$Sig <- as.character(as.numeric(eqtl.tabix.mr$Padjust <= 0.05))
+      
+      all.bcells.mr.list[[paste(x.snp, data.set, sep="_")]] <- eqtl.tabix.mr
+      
+    }
+  }
+}
+
+bcell.mr.df <- do.call(rbind.data.frame,
+                       all.bcells.mr.list)
+
+write.table(bcell.mr.df,
+            file="MR_analysis/TwinsUK_Bcell-MR.txt",
+            sep="\t", quote=FALSE, row.names=FALSE)
+```
+
+
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+# extract the 200kb window around the lead SNP with an association p<=1e-6
+# this is the directory to the bgzipped and tabix-index association results files
+mlma.dir <- "TwinsUK/GCTA_assoc/"
+
+# loop over each variability-QTL
+bcells.var.qtls <- varqtl.clump[varqtl.clump$Measure %in% c("Variability") &
+                                 varqtl.clump$Cohort %in% c("TwinsUK") & 
+                                 grepl(varqtl.clump$HarmonCell, pattern="Bcell") &
+                                 varqtl.clump$SigTier %in% c("Top", "Second"), ]
+bcells.var.snps <- unique(bcells.var.qtls$SNP)
+all.bcells.mr.list <- list()
+all.bcells.mrplot.list <- list()
+
+# The Kasela paper doesn't report BETAs!?!?!?!
+ishigaki.bcell.files  <- list.files(paste0(ishigaki.dir, "B"))
+bcell.data.dirs <- list("DICE.Bcellnaive"=list.files(dice.dir, pattern="B_CELL_NAIVE"), 
+                        "Ishigaki.B"=ishigaki.bcell.files)
+
+for(x in seq_along(bcells.var.snps)){
+  x.snp <- bcells.var.snps[x]
+  lead.chr <- bcells.var.qtls[bcells.var.qtls$SNP %in% x.snp, ]$CHR
+  lead.bp <- bcells.var.qtls[bcells.var.qtls$SNP %in% x.snp, ]$BP
+  lead.trait <- bcells.var.qtls[bcells.var.qtls$SNP %in% x.snp, ]$FullTrait
+  short.trait <- bcells.var.qtls[bcells.var.qtls$SNP %in% x.snp, ]$HarmonTraits
+  
+  mlma.files <- list.files(mlma.dir, pattern=lead.trait)
+  if(lead.chr == 1){
+    ins.chr <- paste0("0",lead.chr)
+  } else{
+    ins.chr <- lead.chr
+  }
+  
+  mlma.file <- mlma.files[grepl(mlma.files, pattern=paste0("-chr", ins.chr, ".mlma.bgz$"))]
+  mlma.tabix <- paste0("tabix ", paste0(mlma.dir, mlma.file), " ", lead.chr, ":", lead.bp-1e5, "-", lead.bp+1e5)
+  mlma.tabix.call <- system(command=mlma.tabix, intern=TRUE)  
+  mlma.tabix.out <- do.call(rbind.data.frame,
+                            sapply(mlma.tabix.call, FUN=function(X) strsplit(X, split="\t", fixed=TRUE)))
+  colnames(mlma.tabix.out) <- c("CHR", "SNP", "BP", "A1", "A2", "MAF", "BETA", "SE", "P")
+  mlma.tabix.out$P <- as.numeric(as.character(mlma.tabix.out$P))
+  mlma.tabix.out$BETA <- as.numeric(as.character(mlma.tabix.out$BETA))
+  mlma.tabix.out$SE <- as.numeric(as.character(mlma.tabix.out$SE))
+  mlma.tabix.out$SNP <- as.character(mlma.tabix.out$SNP)
+  mlma.tabix.out$BP <- as.numeric(as.character(mlma.tabix.out$BP))
+
+  # subset the DICE B cell eQTL results to the same SNPs
+  # SNP names may not match, try on position as well
+  qtl.snps <- mlma.tabix.out[mlma.tabix.out$P <= 1e-5, ]$SNP
+  
+  # iterate through the T cell eQTL results
+  ishigaki.t <- FALSE
+  for(q in seq_along(names(bcell.data.dirs))){
+    data.set <- names(bcell.data.dirs)[q]
+    data.files <- bcell.data.dirs[[data.set]]
+    
+    # need to treat Ishigaki and others differently
+    if(grepl(data.set, pattern="Ishigaki")){
+      ishigaki.t <- TRUE
+    } else{
+      ishigaki.t <- FALSE
+    }
+    # check for tabix file if no Ishigaki
+    qtl.files <- data.files[grepl(data.files, pattern="txt.bgz$")]
+    if(length(qtl.files) > 1 & !isTRUE(ishigaki.t)){
+      # if there are multiple files there are multiple chromosomes
+      # extract the trait name
+      cell.name <- unique(unlist(lapply(strsplit(qtl.files, fixed=TRUE, split="-"), FUN=function(L) paste0(L[2]))))
+      # check there is only one
+      if(length(cell.name) > 1){
+        cell.name <- cell.name[1]
+      }
+      eqtl.file <- paste0(dice.dir, paste0("Chr",lead.chr,"-",cell.name))
+      eqtl.tabix <- paste0("tabix ", eqtl.file, " ", lead.chr, ":", lead.bp-1e5, "-", lead.bp+1e5)
+      eqtl.tabix.call <- system(command=eqtl.tabix, intern=TRUE)
+      eqtl.tabix.out <- do.call(rbind.data.frame,
+                                sapply(eqtl.tabix.call, FUN=function(X) strsplit(X, split="\t", fixed=TRUE)))
+      
+      if(nrow(eqtl.tabix.out)){
+        colnames(eqtl.tabix.out) <- c("CHR", "BP", "SNP", "GENE", "BETA", "P")
+        eqtl.tabix.out$P <- as.numeric(as.character(eqtl.tabix.out$P))
+        eqtl.tabix.out$BETA <- as.numeric(as.character(eqtl.tabix.out$BETA))
+        eqtl.tabix.out$BP <- as.numeric(as.character(eqtl.tabix.out$BP))
+      }
+    } else if(isTRUE(ishigaki.t)){
+      # This means it is the Ishigaki data - no tabix query needed
+      chr.file <- data.files[grepl(data.files, pattern=paste0("chr", lead.chr, "_cis"))]
+      bcell.type <- gsub(data.set, pattern="Ishigaki\\.", replacement="")
+      eqtl.tabix.out <- read.table(paste0(paste0(ishigaki.dir, bcell.type, "/"), chr.file),
+                                   sep="\t", header=TRUE, stringsAsFactors=FALSE)
+      colnames(eqtl.tabix.out) <- c("SNP", "GENE", "BETA", "STAT", "P")
+      # calculate SE as beta/t-stat
+      eqtl.tabix.out$SE <- eqtl.tabix.out$BETA/eqtl.tabix.out$STAT
+    }
+    
+    if(sum(eqtl.tabix.out$SNP %in% unique(qtl.snps)) == 0 & nrow(eqtl.tabix.out)){
+      qtl.bps <- mlma.tabix.out[mlma.tabix.out$P <= 1e-5, ]$BP
+      # if no BP info then skip
+      if(grepl(colnames(eqtl.tabix.out), pattern="BP")){
+        eqtl.tabix.snps <- eqtl.tabix.out[eqtl.tabix.out$BP %in% unique(qtl.bps), ]
+      } else{
+        eqtl.tabix.snps <- c()
+      }
+    }
+    else{
+      eqtl.tabix.snps <- eqtl.tabix.out[eqtl.tabix.out$SNP %in% unique(qtl.snps), ]
+    }
+    
+    eqtl.tabix.list <- list()
+    eqtl.tabix.genes <- unique(as.character(eqtl.tabix.snps$GENE))
+        
+    for(i in seq_along(eqtl.tabix.genes)){
+      i.gene <- as.character(eqtl.tabix.genes[i])
+          
+      # select SNPs with p<= 1e-1?
+      i.summary <- eqtl.tabix.snps[eqtl.tabix.snps$GENE %in% i.gene, ]
+      i.summary <- i.summary[i.summary$P <= 0.05, ]
+      rownames(i.summary) <- i.summary$SNP
+      
+      # remove SNPs with redundant information
+      redundant.eqtl.snps <- rownames(i.summary)[duplicated(i.summary$P) & duplicated(i.summary$BETA)]
+      i.summary <- i.summary[!i.summary$SNP %in% redundant.eqtl.snps, ]
+      
+      qtl.summary <- mlma.tabix.out[mlma.tabix.out$SNP %in% i.summary$SNP, ]
+      rownames(qtl.summary) <- qtl.summary$SNP
+      redundant.snps <- rownames(qtl.summary)[duplicated(qtl.summary$P) & duplicated(qtl.summary$SE) & duplicated(qtl.summary$MAF)]
+      qtl.summary <- qtl.summary[!qtl.summary$SNP %in% redundant.snps, ]
+      i.summary <- i.summary[!i.summary$SNP %in% redundant.snps, ]
+    
+      # check for the same SNPs
+      # select the matching SNPs from the varQTL
+      # if all the SNPs are good then proceed
+      if(all(rownames(i.summary) == rownames(qtl.summary))){
+        i.beta <- as.numeric(as.character(i.summary$BETA))
+        names(i.beta) <- rownames(i.summary)
+      
+        # if there is no SE then assume the p-value is derived from a standard normal
+        i.se <- as.numeric(as.character(i.summary$SE))
+        if(length(i.se) == 0){
+          i.p <- as.numeric(as.character(i.summary$P))
+          i.z <- qnorm(1-i.p)
+          i.se <- i.beta/i.z
+          names(i.se) <- rownames(i.summary)
+        }
+    
+        if(any(abs(i.beta) > 0)){
+          # create an mr_input object
+          # I think there is so little correlation it doesn't matter
+          # remove SNPs with undefined SE and/or beta=0
+          i.se <- i.se[abs(i.beta) > 0]
+          i.beta <- i.beta[abs(i.beta) > 0]
+          
+          qtl.summary <- qtl.summary[names(i.beta), ]
+          rownames(qtl.summary) <- qtl.summary$SNP
+          qtl.beta <- as.numeric(as.character(qtl.summary$BETA))
+          qtl.se <- as.numeric(as.character(qtl.summary$SE))
+          
+          # there is only limited LD information available so I should just remove
+          # SNPs that are perfectly correlated as this is redundant information
+          gene.mr.in <- mr_input(bx=i.beta, bxse=i.se, by=qtl.beta, byse=qtl.se,
+                                 exposure=i.gene, outcome=short.trait, snps=rownames(qtl.summary))
+      
+          # calculate the MR using robust Egger regression if there are multiple SNPs
+          # otherwise use regular MR
+          i.symbol <- allgene.df$external_gene_name[allgene.df$ensembl_gene_id %in% gsub(i.gene, pattern="\\.[0-9]*", replacement="")]
+          
+          if(!length(i.symbol)){
+            i.symbol <- "NA"
+          }
+          
+          if(nrow(qtl.summary) > 2){
+            gene.mr.all <- mr_egger(object=gene.mr.in, robust=TRUE)
+            # capture the penalized robust MR-egger results
+            eqtl.tabix.list[[i.gene]] <- do.call(cbind.data.frame, list("Gene"=i.gene, "BETA.Causal"=gene.mr.all@Estimate,
+                                                                        "BETA.SE"=gene.mr.all@StdError.Est,
+                                                                        "BETA.P"=gene.mr.all@Pvalue.Est, "Intercept"=gene.mr.all@Intercept,
+                                                                        "SNP"=x.snp, "Dataset"=data.set,
+                                                                        "Het.Stat"=gene.mr.all@Heter.Stat[1], "Het.Stat.P"=gene.mr.all@Heter.Stat[2],
+                                                                        "Symbol"=i.symbol, "Method"="MR-Egger"))
+          } else if(nrow(qtl.summary) != 0){
+            # is there a robust estimator for this method?
+            gene.mr.all <- mr_maxlik(object=gene.mr.in)
+            # capture the maximum likelihood esults
+            eqtl.tabix.list[[i.gene]] <- do.call(cbind.data.frame, list("Gene"=i.gene, "BETA.Causal"=gene.mr.all@Estimate, "BETA.SE"=gene.mr.all@StdError,
+                                                                        "BETA.P"=gene.mr.all@Pvalue, "Intercept"=1,
+                                                                        "SNP"=x.snp, "Dataset"=data.set,
+                                                                        "Het.Stat"=gene.mr.all@Heter.Stat[1], "Het.Stat.P"=gene.mr.all@Heter.Stat[2], 
+                                                                        "Symbol"=i.symbol, "Method"="MR-Maxlik"))
+          }
+        }
+      }
+    }
+    
+    if(length(eqtl.tabix.list)){
+      eqtl.tabix.mr <- do.call(rbind.data.frame, eqtl.tabix.list)
+      # remove genes with non-estimated parameters
+      eqtl.tabix.mr <- eqtl.tabix.mr[!is.na(eqtl.tabix.mr$BETA.P), ]
+      eqtl.tabix.mr$Symbol <- as.character(eqtl.tabix.mr$Symbol)
+      eqtl.tabix.mr$Gene <- as.character(eqtl.tabix.mr$Gene)
+      eqtl.tabix.mr$Symbol[eqtl.tabix.mr$Symbol %in% c("NA")] <- eqtl.tabix.mr$Gene[eqtl.tabix.mr$Symbol %in% c("NA")]
+      # multiple testing adjustment
+      eqtl.tabix.mr$Padjust <- p.adjust(eqtl.tabix.mr$BETA.P)
+      eqtl.tabix.mr$Sig <- as.character(as.numeric(eqtl.tabix.mr$Padjust <= 0.05))
+      
+      all.bcells.mr.list[[paste(x.snp, data.set, sep="_")]] <- eqtl.tabix.mr
+      
+    }
+  }
+}
+
+bcell.mr.df <- do.call(rbind.data.frame,
+                       all.bcells.mr.list)
+
+write.table(bcell.mr.df,
+            file="MR_analysis/TwinsUK_Bcell-MR.txt",
+            sep="\t", quote=FALSE, row.names=FALSE)
+```
+
+
+There are no eQTL data on DCs or gamma-delta T cells so I'll move onto the MI variability-QTLs
+
+## MI Mendelian Randomization
+
+### B cells
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+# extract the 200kb window around the lead SNP with an association p<=1e-6
+# this is the directory to the bgzipped and tabix-index association results files
+mlma.dir <- "Mileu_interieur/FCGR2A_GCTA_assoc/"
+
+# loop over each variability-QTL
+bcells.var.qtls <- varqtl.clump[varqtl.clump$Measure %in% c("Variability") &
+                                 varqtl.clump$Cohort %in% c("Milieu Intérieur") & 
+                                 grepl(varqtl.clump$HarmonCell, pattern="Bcell") &
+                                 varqtl.clump$SigTier %in% c("Top", "Second"), ]
+bcells.var.snps <- unique(bcells.var.qtls$SNP)
+all.bcells.mr.list <- list()
+all.bcells.mrplot.list <- list()
+
+# The Kasela paper doesn't report BETAs!?!?!?!
+ishigaki.bcell.files  <- list.files(paste0(ishigaki.dir, "B"))
+bcell.data.dirs <- list("DICE.Bcellnaive"=list.files(dice.dir, pattern="B_CELL_NAIVE"), 
+                        "Ishigaki.B"=ishigaki.bcell.files)
+
+for(x in seq_along(bcells.var.snps)){
+  x.snp <- bcells.var.snps[x]
+  lead.chr <- bcells.var.qtls[bcells.var.qtls$SNP %in% x.snp, ]$CHR
+  lead.bp <- bcells.var.qtls[bcells.var.qtls$SNP %in% x.snp, ]$BP
+  lead.trait <- bcells.var.qtls[bcells.var.qtls$SNP %in% x.snp, ]$FullTrait
+  short.trait <- bcells.var.qtls[bcells.var.qtls$SNP %in% x.snp, ]$HarmonTraits
+  
+  mlma.files <- list.files(mlma.dir, pattern=lead.trait)
+  ins.chr <- lead.chr
+  
+  mlma.file <- mlma.files[grepl(mlma.files, pattern=paste0("-Chr", ins.chr, ".mlma.bgz$"))]
+  mlma.tabix <- paste0("tabix ", paste0(mlma.dir, mlma.file), " ", lead.chr, ":", lead.bp-1e5, "-", lead.bp+1e5)
+  mlma.tabix.call <- system(command=mlma.tabix, intern=TRUE)  
+  mlma.tabix.out <- do.call(rbind.data.frame,
+                            sapply(mlma.tabix.call, FUN=function(X) strsplit(X, split="\t", fixed=TRUE)))
+  colnames(mlma.tabix.out) <- c("CHR", "SNP", "BP", "A1", "A2", "MAF", "BETA", "SE", "P")
+  mlma.tabix.out$P <- as.numeric(as.character(mlma.tabix.out$P))
+  mlma.tabix.out$BETA <- as.numeric(as.character(mlma.tabix.out$BETA))
+  mlma.tabix.out$SE <- as.numeric(as.character(mlma.tabix.out$SE))
+  mlma.tabix.out$SNP <- as.character(mlma.tabix.out$SNP)
+  mlma.tabix.out$BP <- as.numeric(as.character(mlma.tabix.out$BP))
+
+  # subset the DICE B cell eQTL results to the same SNPs
+  # SNP names may not match, try on position as well
+  qtl.snps <- mlma.tabix.out[mlma.tabix.out$P <= 1e-5, ]$SNP
+  
+  # iterate through the T cell eQTL results
+  ishigaki.t <- FALSE
+  for(q in seq_along(names(bcell.data.dirs))){
+    data.set <- names(bcell.data.dirs)[q]
+    data.files <- bcell.data.dirs[[data.set]]
+    
+    # need to treat Ishigaki and others differently
+    if(grepl(data.set, pattern="Ishigaki")){
+      ishigaki.t <- TRUE
+    } else{
+      ishigaki.t <- FALSE
+    }
+    # check for tabix file if no Ishigaki
+    qtl.files <- data.files[grepl(data.files, pattern="txt.bgz$")]
+    if(length(qtl.files) > 1 & !isTRUE(ishigaki.t)){
+      # if there are multiple files there are multiple chromosomes
+      # extract the trait name
+      cell.name <- unique(unlist(lapply(strsplit(qtl.files, fixed=TRUE, split="-"), FUN=function(L) paste0(L[2]))))
+      # check there is only one
+      if(length(cell.name) > 1){
+        cell.name <- cell.name[1]
+      }
+      eqtl.file <- paste0(dice.dir, paste0("Chr",lead.chr,"-",cell.name))
+      eqtl.tabix <- paste0("tabix ", eqtl.file, " ", lead.chr, ":", lead.bp-1e5, "-", lead.bp+1e5)
+      eqtl.tabix.call <- system(command=eqtl.tabix, intern=TRUE)
+      eqtl.tabix.out <- do.call(rbind.data.frame,
+                                sapply(eqtl.tabix.call, FUN=function(X) strsplit(X, split="\t", fixed=TRUE)))
+      
+      if(nrow(eqtl.tabix.out)){
+        colnames(eqtl.tabix.out) <- c("CHR", "BP", "SNP", "GENE", "BETA", "P")
+        eqtl.tabix.out$P <- as.numeric(as.character(eqtl.tabix.out$P))
+        eqtl.tabix.out$BETA <- as.numeric(as.character(eqtl.tabix.out$BETA))
+        eqtl.tabix.out$BP <- as.numeric(as.character(eqtl.tabix.out$BP))
+      }
+    } else if(isTRUE(ishigaki.t)){
+      # This means it is the Ishigaki data - no tabix query needed
+      chr.file <- data.files[grepl(data.files, pattern=paste0("chr", lead.chr, "_cis"))]
+      bcell.type <- gsub(data.set, pattern="Ishigaki\\.", replacement="")
+      eqtl.tabix.out <- read.table(paste0(paste0(ishigaki.dir, bcell.type, "/"), chr.file),
+                                   sep="\t", header=TRUE, stringsAsFactors=FALSE)
+      colnames(eqtl.tabix.out) <- c("SNP", "GENE", "BETA", "STAT", "P")
+      # calculate SE as beta/t-stat
+      eqtl.tabix.out$SE <- eqtl.tabix.out$BETA/eqtl.tabix.out$STAT
+    }
+    
+    if(sum(eqtl.tabix.out$SNP %in% unique(qtl.snps)) == 0 & nrow(eqtl.tabix.out)){
+      qtl.bps <- mlma.tabix.out[mlma.tabix.out$P <= 1e-5, ]$BP
+      # if no BP info then skip
+      if(grepl(colnames(eqtl.tabix.out), pattern="BP")){
+        eqtl.tabix.snps <- eqtl.tabix.out[eqtl.tabix.out$BP %in% unique(qtl.bps), ]
+      } else{
+        eqtl.tabix.snps <- c()
+      }
+    }
+    else{
+      eqtl.tabix.snps <- eqtl.tabix.out[eqtl.tabix.out$SNP %in% unique(qtl.snps), ]
+    }
+    
+    eqtl.tabix.list <- list()
+    eqtl.tabix.genes <- unique(as.character(eqtl.tabix.snps$GENE))
+        
+    for(i in seq_along(eqtl.tabix.genes)){
+      i.gene <- as.character(eqtl.tabix.genes[i])
+          
+      # select SNPs with p<= 1e-1?
+      i.summary <- eqtl.tabix.snps[eqtl.tabix.snps$GENE %in% i.gene, ]
+      i.summary <- i.summary[i.summary$P <= 0.05, ]
+      rownames(i.summary) <- i.summary$SNP
+      
+      # remove SNPs with redundant information
+      redundant.eqtl.snps <- rownames(i.summary)[duplicated(i.summary$P) & duplicated(i.summary$BETA)]
+      i.summary <- i.summary[!i.summary$SNP %in% redundant.eqtl.snps, ]
+      
+      qtl.summary <- mlma.tabix.out[mlma.tabix.out$SNP %in% i.summary$SNP, ]
+      rownames(qtl.summary) <- qtl.summary$SNP
+      redundant.snps <- rownames(qtl.summary)[duplicated(qtl.summary$P) & duplicated(qtl.summary$SE) & duplicated(qtl.summary$MAF)]
+      qtl.summary <- qtl.summary[!qtl.summary$SNP %in% redundant.snps, ]
+      i.summary <- i.summary[!i.summary$SNP %in% redundant.snps, ]
+    
+      # check for the same SNPs
+      # select the matching SNPs from the varQTL
+      # if all the SNPs are good then proceed
+      if(all(rownames(i.summary) == rownames(qtl.summary))){
+        i.beta <- as.numeric(as.character(i.summary$BETA))
+        names(i.beta) <- rownames(i.summary)
+      
+        # if there is no SE then assume the p-value is derived from a standard normal
+        i.se <- as.numeric(as.character(i.summary$SE))
+        if(length(i.se) == 0){
+          i.p <- as.numeric(as.character(i.summary$P))
+          i.z <- qnorm(1-i.p)
+          i.se <- i.beta/i.z
+          names(i.se) <- rownames(i.summary)
+        }
+    
+        if(any(abs(i.beta) > 0)){
+          # create an mr_input object
+          # I think there is so little correlation it doesn't matter
+          # remove SNPs with undefined SE and/or beta=0
+          i.se <- i.se[abs(i.beta) > 0]
+          i.beta <- i.beta[abs(i.beta) > 0]
+          
+          qtl.summary <- qtl.summary[names(i.beta), ]
+          rownames(qtl.summary) <- qtl.summary$SNP
+          qtl.beta <- as.numeric(as.character(qtl.summary$BETA))
+          qtl.se <- as.numeric(as.character(qtl.summary$SE))
+          
+          # there is only limited LD information available so I should just remove
+          # SNPs that are perfectly correlated as this is redundant information
+          gene.mr.in <- mr_input(bx=i.beta, bxse=i.se, by=qtl.beta, byse=qtl.se,
+                                 exposure=i.gene, outcome=short.trait, snps=rownames(qtl.summary))
+      
+          # calculate the MR using robust Egger regression if there are multiple SNPs
+          # otherwise use regular MR
+          i.symbol <- allgene.df$external_gene_name[allgene.df$ensembl_gene_id %in% gsub(i.gene, pattern="\\.[0-9]*", replacement="")]
+          
+          if(!length(i.symbol)){
+            i.symbol <- "NA"
+          }
+          
+          if(nrow(qtl.summary) > 2){
+            gene.mr.all <- mr_egger(object=gene.mr.in, robust=TRUE)
+            # capture the penalized robust MR-egger results
+            eqtl.tabix.list[[i.gene]] <- do.call(cbind.data.frame, list("Gene"=i.gene, "BETA.Causal"=gene.mr.all@Estimate,
+                                                                        "BETA.SE"=gene.mr.all@StdError.Est,
+                                                                        "BETA.P"=gene.mr.all@Pvalue.Est, "Intercept"=gene.mr.all@Intercept,
+                                                                        "SNP"=x.snp, "Dataset"=data.set,
+                                                                        "Het.Stat"=gene.mr.all@Heter.Stat[1], "Het.Stat.P"=gene.mr.all@Heter.Stat[2],
+                                                                        "Symbol"=i.symbol, "Method"="MR-Egger"))
+          } else if(nrow(qtl.summary) != 0){
+            # is there a robust estimator for this method?
+            gene.mr.all <- mr_maxlik(object=gene.mr.in)
+            # capture the maximum likelihood esults
+            eqtl.tabix.list[[i.gene]] <- do.call(cbind.data.frame, list("Gene"=i.gene, "BETA.Causal"=gene.mr.all@Estimate, "BETA.SE"=gene.mr.all@StdError,
+                                                                        "BETA.P"=gene.mr.all@Pvalue, "Intercept"=1,
+                                                                        "SNP"=x.snp, "Dataset"=data.set,
+                                                                        "Het.Stat"=gene.mr.all@Heter.Stat[1], "Het.Stat.P"=gene.mr.all@Heter.Stat[2], 
+                                                                        "Symbol"=i.symbol, "Method"="MR-Maxlik"))
+          }
+        }
+      }
+    }
+    
+    if(length(eqtl.tabix.list)){
+      eqtl.tabix.mr <- do.call(rbind.data.frame, eqtl.tabix.list)
+      # remove genes with non-estimated parameters
+      eqtl.tabix.mr <- eqtl.tabix.mr[!is.na(eqtl.tabix.mr$BETA.P), ]
+      eqtl.tabix.mr$Symbol <- as.character(eqtl.tabix.mr$Symbol)
+      eqtl.tabix.mr$Gene <- as.character(eqtl.tabix.mr$Gene)
+      eqtl.tabix.mr$Symbol[eqtl.tabix.mr$Symbol %in% c("NA")] <- eqtl.tabix.mr$Gene[eqtl.tabix.mr$Symbol %in% c("NA")]
+      # multiple testing adjustment
+      eqtl.tabix.mr$Padjust <- p.adjust(eqtl.tabix.mr$BETA.P)
+      eqtl.tabix.mr$Sig <- as.character(as.numeric(eqtl.tabix.mr$Padjust <= 0.05))
+      
+      all.bcells.mr.list[[paste(x.snp, data.set, sep="_")]] <- eqtl.tabix.mr
+      
+    }
+  }
+}
+
+bcell.mr.df <- do.call(rbind.data.frame,
+                       all.bcells.mr.list)
+
+write.table(bcell.mr.df,
+            file="MR_analysis/MI_Bcell-MR.txt",
+            sep="\t", quote=FALSE, row.names=FALSE)
+```
+
+
+### CD4 cells
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+# extract the 200kb window around the lead SNP with an association p<=1e-6
+# this is the directory to the bgzipped and tabix-index association results files
+mlma.dir <- "Mileu_interieur/GCTA_assoc/"
+
+# loop over each variability-QTL
+tcells.var.qtls <- varqtl.clump[varqtl.clump$Measure %in% c("Variability") &
+                                 varqtl.clump$Cohort %in% c("Milieu Intérieur") & 
+                                 grepl(varqtl.clump$HarmonCell, pattern="CD4") &
+                                 varqtl.clump$SigTier %in% c("Top", "Second"), ]
+tcells.var.snps <- unique(tcells.var.qtls$SNP)
+all.tcells.mr.list <- list()
+all.tcells.mrplot.list <- list()
+
+# The Kasela paper doesn't report BETAs!?!?!?!
+tcell.data.dirs <- list("Ishigaki.CD4"=ishigaki.cd4.files, 
+                        "DICE.CD4naive"=list.files(dice.dir, pattern="CD4_NAIVE"), "DICE.CD4stim"=list.files(dice.dir, pattern="CD4_STIM"),
+                        "DICE.Tfh"=list.files(dice.dir, pattern="TFH"), "DICE.Th1"=list.files(dice.dir, pattern="TH1"),
+                        "DICE.Th17"=list.files(dice.dir, pattern="TH17"), "DICE.Th2"=list.files(dice.dir, pattern="TH2"),
+                        "DICE.Thstar"=list.files(dice.dir, pattern="THSTAR"), "DICE.TregMem"=list.files(dice.dir, pattern="TREG_MEM"))
+
+for(x in seq_along(tcells.var.snps)){
+  x.snp <- tcells.var.snps[x]
+  lead.chr <- tcells.var.qtls[tcells.var.qtls$SNP %in% x.snp, ]$CHR
+  lead.bp <- tcells.var.qtls[tcells.var.qtls$SNP %in% x.snp, ]$BP
+  lead.trait <- tcells.var.qtls[tcells.var.qtls$SNP %in% x.snp, ]$FullTrait
+  short.trait <- tcells.var.qtls[tcells.var.qtls$SNP %in% x.snp, ]$HarmonTraits
+  
+  mlma.files <- list.files(mlma.dir, pattern=lead.trait)
+  ins.chr <- lead.chr
+  
+  mlma.file <- mlma.files[grepl(mlma.files, pattern=paste0("-Chr", ins.chr, ".mlma.bgz$"))]
+  mlma.tabix <- paste0("tabix ", paste0(mlma.dir, mlma.file), " ", lead.chr, ":", lead.bp-1e5, "-", lead.bp+1e5)
+  mlma.tabix.call <- system(command=mlma.tabix, intern=TRUE)  
+  mlma.tabix.out <- do.call(rbind.data.frame,
+                            sapply(mlma.tabix.call, USE.NAMES=FALSE, FUN=function(X) strsplit(X, split="\t", fixed=TRUE)))
+  colnames(mlma.tabix.out) <- c("CHR", "SNP", "BP", "A1", "A2", "MAF", "BETA", "SE", "P")
+  mlma.tabix.out$P <- as.numeric(as.character(mlma.tabix.out$P))
+  mlma.tabix.out$BETA <- as.numeric(as.character(mlma.tabix.out$BETA))
+  mlma.tabix.out$SE <- as.numeric(as.character(mlma.tabix.out$SE))
+  mlma.tabix.out$SNP <- as.character(mlma.tabix.out$SNP)
+  mlma.tabix.out$BP <- as.numeric(as.character(mlma.tabix.out$BP))
+
+  # subset the DICE B cell eQTL results to the same SNPs
+  # SNP names may not match, try on position as well
+  qtl.snps <- mlma.tabix.out[mlma.tabix.out$P <= 1e-5, ]$SNP
+  
+  # iterate through the T cell eQTL results
+  ishigaki.t <- FALSE
+  for(q in seq_along(names(tcell.data.dirs))){
+    data.set <- names(tcell.data.dirs)[q]
+    data.files <- tcell.data.dirs[[data.set]]
+    
+    # need to treat Ishigaki and others differently
+    if(grepl(data.set, pattern="Ishigaki")){
+      ishigaki.t <- TRUE
+    } else{
+      ishigaki.t <- FALSE
+    }
+    # check for tabix file if no Ishigaki
+    qtl.files <- data.files[grepl(data.files, pattern="txt.bgz$")]
+    if(length(qtl.files) > 1 & !isTRUE(ishigaki.t)){
+      # if there are multiple files there are multiple chromosomes
+      # extract the trait name
+      cell.name <- unique(unlist(lapply(strsplit(qtl.files, fixed=TRUE, split="-"), FUN=function(L) paste0(L[2]))))
+      # check there is only one
+      if(length(cell.name) > 1){
+        cell.name <- cell.name[1]
+      }
+      eqtl.file <- paste0(dice.dir, paste0("Chr",lead.chr,"-",cell.name))
+      eqtl.tabix <- paste0("tabix ", eqtl.file, " ", lead.chr, ":", lead.bp-1e5, "-", lead.bp+1e5)
+      eqtl.tabix.call <- system(command=eqtl.tabix, intern=TRUE)
+      eqtl.tabix.out <- do.call(rbind.data.frame,
+                                sapply(eqtl.tabix.call, FUN=function(X) strsplit(X, split="\t", fixed=TRUE)))
+      
+      if(nrow(eqtl.tabix.out)){
+        colnames(eqtl.tabix.out) <- c("CHR", "BP", "SNP", "GENE", "BETA", "P")
+        eqtl.tabix.out$P <- as.numeric(as.character(eqtl.tabix.out$P))
+        eqtl.tabix.out$BETA <- as.numeric(as.character(eqtl.tabix.out$BETA))
+        eqtl.tabix.out$BP <- as.numeric(as.character(eqtl.tabix.out$BP))
+      }
+    } else if(isTRUE(ishigaki.t)){
+      # This means it is the Ishigaki data - no tabix query needed
+      chr.file <- data.files[grepl(data.files, pattern=paste0("chr", lead.chr, "_cis"))]
+      tcell.type <- gsub(data.set, pattern="Ishigaki\\.", replacement="")
+      eqtl.tabix.out <- read.table(paste0(paste0(ishigaki.dir, tcell.type, "/"), chr.file),
+                                   sep="\t", header=TRUE, stringsAsFactors=FALSE)
+      colnames(eqtl.tabix.out) <- c("SNP", "GENE", "BETA", "STAT", "P")
+      # calculate SE as beta/t-stat
+      eqtl.tabix.out$SE <- eqtl.tabix.out$BETA/eqtl.tabix.out$STAT
+    }
+    
+    if(sum(eqtl.tabix.out$SNP %in% unique(qtl.snps)) == 0 & nrow(eqtl.tabix.out)){
+      qtl.bps <- mlma.tabix.out[mlma.tabix.out$P <= 1e-5, ]$BP
+      # if no BP info then skip
+      if(grepl(colnames(eqtl.tabix.out), pattern="BP")){
+        eqtl.tabix.snps <- eqtl.tabix.out[eqtl.tabix.out$BP %in% unique(qtl.bps), ]
+      } else{
+        eqtl.tabix.snps <- c()
+      }
+    }
+    else{
+      eqtl.tabix.snps <- eqtl.tabix.out[eqtl.tabix.out$SNP %in% unique(qtl.snps), ]
+    }
+    
+    eqtl.tabix.list <- list()
+    eqtl.tabix.genes <- unique(as.character(eqtl.tabix.snps$GENE))
+        
+    for(i in seq_along(eqtl.tabix.genes)){
+      i.gene <- as.character(eqtl.tabix.genes[i])
+          
+      # select SNPs with p<= 1e-1?
+      i.summary <- eqtl.tabix.snps[eqtl.tabix.snps$GENE %in% i.gene, ]
+      i.summary <- i.summary[i.summary$P <= 0.05, ]
+      rownames(i.summary) <- i.summary$SNP
+      
+      # remove SNPs with redundant information
+      redundant.eqtl.snps <- rownames(i.summary)[duplicated(i.summary$P) & duplicated(i.summary$BETA)]
+      i.summary <- i.summary[!i.summary$SNP %in% redundant.eqtl.snps, ]
+      
+      qtl.summary <- mlma.tabix.out[mlma.tabix.out$SNP %in% i.summary$SNP, ]
+      rownames(qtl.summary) <- qtl.summary$SNP
+      redundant.snps <- rownames(qtl.summary)[duplicated(qtl.summary$P) & duplicated(qtl.summary$SE) & duplicated(qtl.summary$MAF)]
+      qtl.summary <- qtl.summary[!qtl.summary$SNP %in% redundant.snps, ]
+      i.summary <- i.summary[!i.summary$SNP %in% redundant.snps, ]
+    
+      # check for the same SNPs
+      # select the matching SNPs from the varQTL
+      # if all the SNPs are good then proceed
+      if(all(rownames(i.summary) == rownames(qtl.summary))){
+        i.beta <- as.numeric(as.character(i.summary$BETA))
+        names(i.beta) <- rownames(i.summary)
+      
+        # if there is no SE then assume the p-value is derived from a standard normal
+        i.se <- as.numeric(as.character(i.summary$SE))
+        if(length(i.se) == 0){
+          i.p <- as.numeric(as.character(i.summary$P))
+          i.z <- qnorm(1-i.p)
+          i.se <- i.beta/i.z
+          names(i.se) <- rownames(i.summary)
+        }
+    
+        if(any(abs(i.beta) > 0)){
+          # create an mr_input object
+          # I think there is so little correlation it doesn't matter
+          # remove SNPs with undefined SE and/or beta=0
+          i.se <- i.se[abs(i.beta) > 0]
+          i.beta <- i.beta[abs(i.beta) > 0]
+          
+          qtl.summary <- qtl.summary[names(i.beta), ]
+          rownames(qtl.summary) <- qtl.summary$SNP
+          qtl.beta <- as.numeric(as.character(qtl.summary$BETA))
+          qtl.se <- as.numeric(as.character(qtl.summary$SE))
+          
+          # there is only limited LD information available so I should just remove
+          # SNPs that are perfectly correlated as this is redundant information
+          gene.mr.in <- mr_input(bx=i.beta, bxse=i.se, by=qtl.beta, byse=qtl.se,
+                                 exposure=i.gene, outcome=short.trait, snps=rownames(qtl.summary))
+      
+          # calculate the MR using robust Egger regression if there are multiple SNPs
+          # otherwise use regular MR
+          i.symbol <- allgene.df$external_gene_name[allgene.df$ensembl_gene_id %in% gsub(i.gene, pattern="\\.[0-9]*", replacement="")]
+          
+          if(!length(i.symbol)){
+            i.symbol <- "NA"
+          }
+          
+          if(nrow(qtl.summary) > 2){
+            gene.mr.all <- mr_egger(object=gene.mr.in, robust=TRUE)
+            # capture the penalized robust MR-egger results
+            eqtl.tabix.list[[i.gene]] <- do.call(cbind.data.frame, list("Gene"=i.gene, "BETA.Causal"=gene.mr.all@Estimate,
+                                                                        "BETA.SE"=gene.mr.all@StdError.Est,
+                                                                        "BETA.P"=gene.mr.all@Pvalue.Est, "Intercept"=gene.mr.all@Intercept,
+                                                                        "SNP"=x.snp, "Dataset"=data.set,
+                                                                        "Het.Stat"=gene.mr.all@Heter.Stat[1], "Het.Stat.P"=gene.mr.all@Heter.Stat[2],
+                                                                        "Symbol"=i.symbol, "Method"="MR-Egger"))
+          } else if(nrow(qtl.summary) != 0){
+            # is there a robust estimator for this method?
+            gene.mr.all <- mr_maxlik(object=gene.mr.in)
+            # capture the maximum likelihood esults
+            eqtl.tabix.list[[i.gene]] <- do.call(cbind.data.frame, list("Gene"=i.gene, "BETA.Causal"=gene.mr.all@Estimate, "BETA.SE"=gene.mr.all@StdError,
+                                                                        "BETA.P"=gene.mr.all@Pvalue, "Intercept"=1,
+                                                                        "SNP"=x.snp, "Dataset"=data.set,
+                                                                        "Het.Stat"=gene.mr.all@Heter.Stat[1], "Het.Stat.P"=gene.mr.all@Heter.Stat[2], 
+                                                                        "Symbol"=i.symbol, "Method"="MR-Maxlik"))
+          }
+        }
+      }
+    }
+    
+    if(length(eqtl.tabix.list)){
+      eqtl.tabix.mr <- do.call(rbind.data.frame, eqtl.tabix.list)
+      # remove genes with non-estimated parameters
+      eqtl.tabix.mr <- eqtl.tabix.mr[!is.na(eqtl.tabix.mr$BETA.P), ]
+      eqtl.tabix.mr$Symbol <- as.character(eqtl.tabix.mr$Symbol)
+      eqtl.tabix.mr$Gene <- as.character(eqtl.tabix.mr$Gene)
+      eqtl.tabix.mr$Symbol[eqtl.tabix.mr$Symbol %in% c("NA")] <- eqtl.tabix.mr$Gene[eqtl.tabix.mr$Symbol %in% c("NA")]
+      # multiple testing adjustment
+      eqtl.tabix.mr$Padjust <- p.adjust(eqtl.tabix.mr$BETA.P)
+      eqtl.tabix.mr$Sig <- as.character(as.numeric(eqtl.tabix.mr$Padjust <= 0.05))
+      
+      all.tcells.mr.list[[paste(x.snp, data.set, sep="_")]] <- eqtl.tabix.mr
+      
+    }
+  }
+}
+
+tcell.mr.df <- do.call(rbind.data.frame,
+                       all.tcells.mr.list)
+
+write.table(tcell.mr.df,
+            file="MR_analysis/MI_CD4.Tcell-MR.txt",
+            sep="\t", quote=FALSE, row.names=FALSE)
+```
+
+
+### CD8 cells
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+# extract the 200kb window around the lead SNP with an association p<=1e-6
+# this is the directory to the bgzipped and tabix-index association results files
+mlma.dir <- "Mileu_interieur/FCGR2A_GCTA_assoc/"
+
+# loop over each variability-QTL
+tcells.var.qtls <- varqtl.clump[varqtl.clump$Measure %in% c("Variability") &
+                                 varqtl.clump$Cohort %in% c("Milieu Intérieur") & 
+                                 grepl(varqtl.clump$HarmonCell, pattern="CD8") &
+                                 varqtl.clump$SigTier %in% c("Top", "Second"), ]
+tcells.var.snps <- unique(tcells.var.qtls$SNP)
+all.tcells.mr.list <- list()
+all.tcells.mrplot.list <- list()
+
+# The Kasela paper doesn't report BETAs!?!?!?!
+# The Kasela paper doesn't report BETAs!?!?!?!
+tcell.data.dirs <- list("Ishigaki.CD8"=ishigaki.cd4.files, 
+                        "DICE.CD8naive"=list.files(dice.dir, pattern="CD8_NAIVE"), "DICE.CD8stim"=list.files(dice.dir, pattern="CD8_STIM"))
+
+for(x in seq_along(tcells.var.snps)){
+  x.snp <- tcells.var.snps[x]
+  lead.chr <- tcells.var.qtls[tcells.var.qtls$SNP %in% x.snp, ]$CHR
+  lead.bp <- tcells.var.qtls[tcells.var.qtls$SNP %in% x.snp, ]$BP
+  lead.trait <- tcells.var.qtls[tcells.var.qtls$SNP %in% x.snp, ]$FullTrait
+  short.trait <- tcells.var.qtls[tcells.var.qtls$SNP %in% x.snp, ]$HarmonTraits
+  
+  mlma.files <- list.files(mlma.dir, pattern=lead.trait)
+  ins.chr <- lead.chr
+  
+  mlma.file <- mlma.files[grepl(mlma.files, pattern=paste0("-Chr", ins.chr, ".mlma.bgz$"))]
+  mlma.tabix <- paste0("tabix ", paste0(mlma.dir, mlma.file), " ", lead.chr, ":", lead.bp-1e5, "-", lead.bp+1e5)
+  mlma.tabix.call <- system(command=mlma.tabix, intern=TRUE)  
+  mlma.tabix.out <- do.call(rbind.data.frame,
+                            sapply(mlma.tabix.call, USE.NAMES=FALSE, FUN=function(X) strsplit(X, split="\t", fixed=TRUE)))
+  colnames(mlma.tabix.out) <- c("CHR", "SNP", "BP", "A1", "A2", "MAF", "BETA", "SE", "P")
+  mlma.tabix.out$P <- as.numeric(as.character(mlma.tabix.out$P))
+  mlma.tabix.out$BETA <- as.numeric(as.character(mlma.tabix.out$BETA))
+  mlma.tabix.out$SE <- as.numeric(as.character(mlma.tabix.out$SE))
+  mlma.tabix.out$SNP <- as.character(mlma.tabix.out$SNP)
+  mlma.tabix.out$BP <- as.numeric(as.character(mlma.tabix.out$BP))
+
+  # subset the DICE B cell eQTL results to the same SNPs
+  # SNP names may not match, try on position as well
+  qtl.snps <- mlma.tabix.out[mlma.tabix.out$P <= 1e-5, ]$SNP
+  
+  # iterate through the T cell eQTL results
+  ishigaki.t <- FALSE
+  for(q in seq_along(names(tcell.data.dirs))){
+    data.set <- names(tcell.data.dirs)[q]
+    data.files <- tcell.data.dirs[[data.set]]
+    
+    # need to treat Ishigaki and others differently
+    if(grepl(data.set, pattern="Ishigaki")){
+      ishigaki.t <- TRUE
+    } else{
+      ishigaki.t <- FALSE
+    }
+    # check for tabix file if no Ishigaki
+    qtl.files <- data.files[grepl(data.files, pattern="txt.bgz$")]
+    if(length(qtl.files) > 1 & !isTRUE(ishigaki.t)){
+      # if there are multiple files there are multiple chromosomes
+      # extract the trait name
+      cell.name <- unique(unlist(lapply(strsplit(qtl.files, fixed=TRUE, split="-"), FUN=function(L) paste0(L[2]))))
+      # check there is only one
+      if(length(cell.name) > 1){
+        cell.name <- cell.name[1]
+      }
+      eqtl.file <- paste0(dice.dir, paste0("Chr",lead.chr,"-",cell.name))
+      eqtl.tabix <- paste0("tabix ", eqtl.file, " ", lead.chr, ":", lead.bp-1e5, "-", lead.bp+1e5)
+      eqtl.tabix.call <- system(command=eqtl.tabix, intern=TRUE)
+      eqtl.tabix.out <- do.call(rbind.data.frame,
+                                sapply(eqtl.tabix.call, FUN=function(X) strsplit(X, split="\t", fixed=TRUE)))
+      
+      if(nrow(eqtl.tabix.out)){
+        colnames(eqtl.tabix.out) <- c("CHR", "BP", "SNP", "GENE", "BETA", "P")
+        eqtl.tabix.out$P <- as.numeric(as.character(eqtl.tabix.out$P))
+        eqtl.tabix.out$BETA <- as.numeric(as.character(eqtl.tabix.out$BETA))
+        eqtl.tabix.out$BP <- as.numeric(as.character(eqtl.tabix.out$BP))
+      }
+    } else if(isTRUE(ishigaki.t)){
+      # This means it is the Ishigaki data - no tabix query needed
+      chr.file <- data.files[grepl(data.files, pattern=paste0("chr", lead.chr, "_cis"))]
+      tcell.type <- gsub(data.set, pattern="Ishigaki\\.", replacement="")
+      eqtl.tabix.out <- read.table(paste0(paste0(ishigaki.dir, tcell.type, "/"), chr.file),
+                                   sep="\t", header=TRUE, stringsAsFactors=FALSE)
+      colnames(eqtl.tabix.out) <- c("SNP", "GENE", "BETA", "STAT", "P")
+      # calculate SE as beta/t-stat
+      eqtl.tabix.out$SE <- eqtl.tabix.out$BETA/eqtl.tabix.out$STAT
+    }
+    
+    if(sum(eqtl.tabix.out$SNP %in% unique(qtl.snps)) == 0 & nrow(eqtl.tabix.out)){
+      qtl.bps <- mlma.tabix.out[mlma.tabix.out$P <= 1e-5, ]$BP
+      # if no BP info then skip
+      if(grepl(colnames(eqtl.tabix.out), pattern="BP")){
+        eqtl.tabix.snps <- eqtl.tabix.out[eqtl.tabix.out$BP %in% unique(qtl.bps), ]
+      } else{
+        eqtl.tabix.snps <- c()
+      }
+    }
+    else{
+      eqtl.tabix.snps <- eqtl.tabix.out[eqtl.tabix.out$SNP %in% unique(qtl.snps), ]
+    }
+    
+    eqtl.tabix.list <- list()
+    eqtl.tabix.genes <- unique(as.character(eqtl.tabix.snps$GENE))
+        
+    for(i in seq_along(eqtl.tabix.genes)){
+      i.gene <- as.character(eqtl.tabix.genes[i])
+          
+      # select SNPs with p<= 1e-1?
+      i.summary <- eqtl.tabix.snps[eqtl.tabix.snps$GENE %in% i.gene, ]
+      i.summary <- i.summary[i.summary$P <= 0.05, ]
+      rownames(i.summary) <- i.summary$SNP
+      
+      # remove SNPs with redundant information
+      redundant.eqtl.snps <- rownames(i.summary)[duplicated(i.summary$BETA)]
+      i.summary <- i.summary[!i.summary$SNP %in% redundant.eqtl.snps, ]
+      
+      qtl.summary <- mlma.tabix.out[mlma.tabix.out$SNP %in% i.summary$SNP, ]
+      rownames(qtl.summary) <- qtl.summary$SNP
+      redundant.snps <- rownames(qtl.summary)[duplicated(qtl.summary$P) & duplicated(qtl.summary$SE) & duplicated(qtl.summary$MAF)]
+      qtl.summary <- qtl.summary[!qtl.summary$SNP %in% redundant.snps, ]
+      i.summary <- i.summary[!i.summary$SNP %in% redundant.snps, ]
+    
+      # check for the same SNPs
+      # select the matching SNPs from the varQTL
+      # if all the SNPs are good then proceed
+      if(all(rownames(i.summary) == rownames(qtl.summary))){
+        i.beta <- as.numeric(as.character(i.summary$BETA))
+        names(i.beta) <- rownames(i.summary)
+      
+        # if there is no SE then assume the p-value is derived from a standard normal
+        i.se <- as.numeric(as.character(i.summary$SE))
+        if(length(i.se) == 0){
+          i.p <- as.numeric(as.character(i.summary$P))
+          i.z <- qnorm(1-i.p)
+          i.se <- i.beta/i.z
+          names(i.se) <- rownames(i.summary)
+        }
+    
+        if(any(abs(i.beta) > 0)){
+          # create an mr_input object
+          # I think there is so little correlation it doesn't matter
+          # remove SNPs with undefined SE and/or beta=0
+          i.se <- i.se[abs(i.beta) > 0]
+          i.beta <- i.beta[abs(i.beta) > 0]
+          
+          qtl.summary <- qtl.summary[names(i.beta), ]
+          rownames(qtl.summary) <- qtl.summary$SNP
+          qtl.beta <- as.numeric(as.character(qtl.summary$BETA))
+          qtl.se <- as.numeric(as.character(qtl.summary$SE))
+          
+          # there is only limited LD information available so I should just remove
+          # SNPs that are perfectly correlated as this is redundant information
+          gene.mr.in <- mr_input(bx=i.beta, bxse=i.se, by=qtl.beta, byse=qtl.se,
+                                 exposure=i.gene, outcome=short.trait, snps=rownames(qtl.summary))
+      
+          # calculate the MR using robust Egger regression if there are multiple SNPs
+          # otherwise use regular MR
+          i.symbol <- allgene.df$external_gene_name[allgene.df$ensembl_gene_id %in% gsub(i.gene, pattern="\\.[0-9]*", replacement="")]
+          
+          if(!length(i.symbol)){
+            i.symbol <- "NA"
+          }
+          
+          if(nrow(qtl.summary) > 2){
+            gene.mr.all <- mr_egger(object=gene.mr.in, robust=TRUE)
+            # capture the penalized robust MR-egger results
+            eqtl.tabix.list[[i.gene]] <- do.call(cbind.data.frame, list("Gene"=i.gene, "BETA.Causal"=gene.mr.all@Estimate,
+                                                                        "BETA.SE"=gene.mr.all@StdError.Est,
+                                                                        "BETA.P"=gene.mr.all@Pvalue.Est, "Intercept"=gene.mr.all@Intercept,
+                                                                        "SNP"=x.snp, "Dataset"=data.set,
+                                                                        "Het.Stat"=gene.mr.all@Heter.Stat[1], "Het.Stat.P"=gene.mr.all@Heter.Stat[2],
+                                                                        "Symbol"=i.symbol, "Method"="MR-Egger"))
+          } else if(nrow(qtl.summary) != 0){
+            # is there a robust estimator for this method?
+            gene.mr.all <- mr_maxlik(object=gene.mr.in)
+            # capture the maximum likelihood esults
+            eqtl.tabix.list[[i.gene]] <- do.call(cbind.data.frame, list("Gene"=i.gene, "BETA.Causal"=gene.mr.all@Estimate, "BETA.SE"=gene.mr.all@StdError,
+                                                                        "BETA.P"=gene.mr.all@Pvalue, "Intercept"=1,
+                                                                        "SNP"=x.snp, "Dataset"=data.set,
+                                                                        "Het.Stat"=gene.mr.all@Heter.Stat[1], "Het.Stat.P"=gene.mr.all@Heter.Stat[2], 
+                                                                        "Symbol"=i.symbol, "Method"="MR-Maxlik"))
+          }
+        }
+      }
+    }
+    
+    if(length(eqtl.tabix.list)){
+      eqtl.tabix.mr <- do.call(rbind.data.frame, eqtl.tabix.list)
+      # remove genes with non-estimated parameters
+      eqtl.tabix.mr <- eqtl.tabix.mr[!is.na(eqtl.tabix.mr$BETA.P), ]
+      eqtl.tabix.mr$Symbol <- as.character(eqtl.tabix.mr$Symbol)
+      eqtl.tabix.mr$Gene <- as.character(eqtl.tabix.mr$Gene)
+      eqtl.tabix.mr$Symbol[eqtl.tabix.mr$Symbol %in% c("NA")] <- eqtl.tabix.mr$Gene[eqtl.tabix.mr$Symbol %in% c("NA")]
+      # multiple testing adjustment
+      eqtl.tabix.mr$Padjust <- p.adjust(eqtl.tabix.mr$BETA.P)
+      eqtl.tabix.mr$Sig <- as.character(as.numeric(eqtl.tabix.mr$Padjust <= 0.05))
+      
+      all.tcells.mr.list[[paste(x.snp, data.set, sep="_")]] <- eqtl.tabix.mr
+      
+    }
+  }
+}
+
+tcell.mr.df <- do.call(rbind.data.frame,
+                       all.tcells.mr.list)
+
+write.table(tcell.mr.df,
+            file="MR_analysis/MI_CD8.Tcell-MR.txt",
+            sep="\t", quote=FALSE, row.names=FALSE)
+```
+
+
+### Monocytes
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+# extract the 200kb window around the lead SNP with an association p<=1e-6
+# this is the directory to the bgzipped and tabix-index association results files
+mlma.dir <- "Mileu_interieur/GCTA_assoc/"
+
+# loop over each variability-QTL
+mono.var.qtls <- varqtl.clump[varqtl.clump$Measure %in% c("Variability") &
+                                 varqtl.clump$Cohort %in% c("Milieu Intérieur") & 
+                                 grepl(varqtl.clump$HarmonCell, pattern="Mono") &
+                                 varqtl.clump$SigTier %in% c("Top", "Second"), ]
+mono.var.snps <- unique(mono.var.qtls$SNP)
+all.mono.mr.list <- list()
+all.mono.mrplot.list <- list()
+
+# The Kasela paper doesn't report BETAs!?!?!?!
+ishigaki.mono.files <- list.files(paste0(ishigaki.dir, "Mono"))
+
+mono.data.dirs <- list("Ishigaki.Mono"=ishigaki.mono.files, "Chen.Mono"=chen.mono.file,
+                       "DICE.MONOCYTES"=list.files(dice.dir, pattern="MONOCYTES"))
+
+for(x in seq_along(mono.var.snps)){
+  x.snp <- mono.var.snps[x]
+  lead.chr <- mono.var.qtls[mono.var.qtls$SNP %in% x.snp, ]$CHR
+  lead.bp <- mono.var.qtls[mono.var.qtls$SNP %in% x.snp, ]$BP
+  lead.trait <- mono.var.qtls[mono.var.qtls$SNP %in% x.snp, ]$FullTrait
+  short.trait <- mono.var.qtls[mono.var.qtls$SNP %in% x.snp, ]$HarmonTraits
+  
+  mlma.files <- list.files(mlma.dir, pattern=lead.trait)
+  ins.chr <- lead.chr
+  
+  mlma.file <- mlma.files[grepl(mlma.files, pattern=paste0("-Chr", ins.chr, ".mlma.bgz$"))]
+  mlma.tabix <- paste0("tabix ", paste0(mlma.dir, mlma.file), " ", lead.chr, ":", lead.bp-1e5, "-", lead.bp+1e5)
+  mlma.tabix.call <- system(command=mlma.tabix, intern=TRUE)  
+  mlma.tabix.out <- do.call(rbind.data.frame,
+                            sapply(mlma.tabix.call, USE.NAMES=FALSE, FUN=function(X) strsplit(X, split="\t", fixed=TRUE)))
+  colnames(mlma.tabix.out) <- c("CHR", "SNP", "BP", "A1", "A2", "MAF", "BETA", "SE", "P")
+  mlma.tabix.out$P <- as.numeric(as.character(mlma.tabix.out$P))
+  mlma.tabix.out$BETA <- as.numeric(as.character(mlma.tabix.out$BETA))
+  mlma.tabix.out$SE <- as.numeric(as.character(mlma.tabix.out$SE))
+  mlma.tabix.out$SNP <- as.character(mlma.tabix.out$SNP)
+  mlma.tabix.out$BP <- as.numeric(as.character(mlma.tabix.out$BP))
+
+  # subset the DICE B cell eQTL results to the same SNPs
+  # SNP names may not match, try on position as well
+  qtl.snps <- mlma.tabix.out[mlma.tabix.out$P <= 1e-5, ]$SNP
+  
+  # iterate through the T cell eQTL results
+  ishigaki.t <- FALSE
+  for(q in seq_along(names(mono.data.dirs))){
+    data.set <- names(mono.data.dirs)[q]
+    data.files <- mono.data.dirs[[data.set]]
+    
+    # need to treat Ishigaki and others differently
+    if(grepl(data.set, pattern="Ishigaki")){
+      ishigaki.t <- TRUE
+    } else{
+      ishigaki.t <- FALSE
+    }
+    # check for tabix file if no Ishigaki
+    qtl.files <- data.files[grepl(data.files, pattern="txt.bgz$")]
+    if(length(qtl.files) > 1 & !isTRUE(ishigaki.t)){
+      # if there are multiple files there are multiple chromosomes
+      # extract the trait name
+      cell.name <- unique(unlist(lapply(strsplit(qtl.files, fixed=TRUE, split="-"), FUN=function(L) paste0(L[2]))))
+      # check there is only one
+      if(length(cell.name) > 1){
+        cell.name <- cell.name[1]
+      }
+      eqtl.file <- paste0(dice.dir, paste0("Chr",lead.chr,"-",cell.name))
+      eqtl.tabix <- paste0("tabix ", eqtl.file, " ", lead.chr, ":", lead.bp-1e5, "-", lead.bp+1e5)
+      eqtl.tabix.call <- system(command=eqtl.tabix, intern=TRUE)
+      eqtl.tabix.out <- do.call(rbind.data.frame,
+                                sapply(eqtl.tabix.call, FUN=function(X) strsplit(X, split="\t", fixed=TRUE)))
+      
+      if(nrow(eqtl.tabix.out)){
+        if(grepl(data.set, pattern="DICE")){
+          colnames(eqtl.tabix.out) <- c("CHR", "BP", "SNP", "GENE", "BETA", "P")
+        } else if(grepl(data.set, pattern="Chen")){
+          colnames(eqtl.tabix.out) <- c("CHR", "BP", "A1", "A2", "SNP", "GENE", "P", "BETA", "BONFP", "FDR", "MAF", "SE")
+        }
+        
+        eqtl.tabix.out$P <- as.numeric(as.character(eqtl.tabix.out$P))
+        eqtl.tabix.out$BETA <- as.numeric(as.character(eqtl.tabix.out$BETA))
+        eqtl.tabix.out$BP <- as.numeric(as.character(eqtl.tabix.out$BP))
+      }
+    } else if(isTRUE(ishigaki.t)){
+      # This means it is the Ishigaki data - no tabix query needed
+      chr.file <- data.files[grepl(data.files, pattern=paste0("chr", lead.chr, "_cis"))]
+      mono.type <- gsub(data.set, pattern="Ishigaki\\.", replacement="")
+      eqtl.tabix.out <- read.table(paste0(paste0(ishigaki.dir, mono.type, "/"), chr.file),
+                                   sep="\t", header=TRUE, stringsAsFactors=FALSE)
+      colnames(eqtl.tabix.out) <- c("SNP", "GENE", "BETA", "STAT", "P")
+      # calculate SE as beta/t-stat
+      eqtl.tabix.out$SE <- eqtl.tabix.out$BETA/eqtl.tabix.out$STAT
+    }
+    
+    if(sum(eqtl.tabix.out$SNP %in% unique(qtl.snps)) == 0 & nrow(eqtl.tabix.out)){
+      qtl.bps <- mlma.tabix.out[mlma.tabix.out$P <= 1e-5, ]$BP
+      # if no BP info then skip
+      if(grepl(colnames(eqtl.tabix.out), pattern="BP")){
+        eqtl.tabix.snps <- eqtl.tabix.out[eqtl.tabix.out$BP %in% unique(qtl.bps), ]
+      } else{
+        eqtl.tabix.snps <- c()
+      }
+    }
+    else{
+      eqtl.tabix.snps <- eqtl.tabix.out[eqtl.tabix.out$SNP %in% unique(qtl.snps), ]
+    }
+    
+    eqtl.tabix.list <- list()
+    eqtl.tabix.genes <- unique(as.character(eqtl.tabix.snps$GENE))
+        
+    for(i in seq_along(eqtl.tabix.genes)){
+      i.gene <- as.character(eqtl.tabix.genes[i])
+          
+      # select SNPs with p<= 1e-1?
+      i.summary <- eqtl.tabix.snps[eqtl.tabix.snps$GENE %in% i.gene, ]
+      i.summary <- i.summary[i.summary$P <= 0.05, ]
+      rownames(i.summary) <- i.summary$SNP
+      
+      # remove SNPs with redundant information
+      redundant.eqtl.snps <- rownames(i.summary)[duplicated(i.summary$BETA)]
+      i.summary <- i.summary[!i.summary$SNP %in% redundant.eqtl.snps, ]
+      
+      qtl.summary <- mlma.tabix.out[mlma.tabix.out$SNP %in% i.summary$SNP, ]
+      rownames(qtl.summary) <- qtl.summary$SNP
+      redundant.snps <- rownames(qtl.summary)[duplicated(qtl.summary$P) & duplicated(qtl.summary$SE) & duplicated(qtl.summary$MAF)]
+      qtl.summary <- qtl.summary[!qtl.summary$SNP %in% redundant.snps, ]
+      i.summary <- i.summary[!i.summary$SNP %in% redundant.snps, ]
+    
+      # check for the same SNPs
+      # select the matching SNPs from the varQTL
+      # if all the SNPs are good then proceed
+      if(all(rownames(i.summary) == rownames(qtl.summary))){
+        i.beta <- as.numeric(as.character(i.summary$BETA))
+        names(i.beta) <- rownames(i.summary)
+      
+        # if there is no SE then assume the p-value is derived from a standard normal
+        i.se <- as.numeric(as.character(i.summary$SE))
+        if(length(i.se) == 0){
+          i.p <- as.numeric(as.character(i.summary$P))
+          i.z <- qnorm(1-i.p)
+          i.se <- i.beta/i.z
+          names(i.se) <- rownames(i.summary)
+        }
+    
+        if(any(abs(i.beta) > 0)){
+          # create an mr_input object
+          # I think there is so little correlation it doesn't matter
+          # remove SNPs with undefined SE and/or beta=0
+          i.se <- i.se[abs(i.beta) > 0]
+          i.beta <- i.beta[abs(i.beta) > 0]
+          
+          qtl.summary <- qtl.summary[names(i.beta), ]
+          rownames(qtl.summary) <- qtl.summary$SNP
+          qtl.beta <- as.numeric(as.character(qtl.summary$BETA))
+          qtl.se <- as.numeric(as.character(qtl.summary$SE))
+          
+          # there is only limited LD information available so I should just remove
+          # SNPs that are perfectly correlated as this is redundant information
+          gene.mr.in <- mr_input(bx=i.beta, bxse=i.se, by=qtl.beta, byse=qtl.se,
+                                 exposure=i.gene, outcome=short.trait, snps=rownames(qtl.summary))
+      
+          # calculate the MR using robust Egger regression if there are multiple SNPs
+          # otherwise use regular MR
+          i.symbol <- allgene.df$external_gene_name[allgene.df$ensembl_gene_id %in% gsub(i.gene, pattern="\\.[0-9]*", replacement="")]
+          
+          if(!length(i.symbol)){
+            i.symbol <- "NA"
+          }
+          
+          if(nrow(qtl.summary) > 2){
+            gene.mr.all <- mr_egger(object=gene.mr.in, robust=TRUE)
+            # capture the penalized robust MR-egger results
+            eqtl.tabix.list[[i.gene]] <- do.call(cbind.data.frame, list("Gene"=i.gene, "BETA.Causal"=gene.mr.all@Estimate,
+                                                                        "BETA.SE"=gene.mr.all@StdError.Est,
+                                                                        "BETA.P"=gene.mr.all@Pvalue.Est, "Intercept"=gene.mr.all@Intercept,
+                                                                        "SNP"=x.snp, "Dataset"=data.set,
+                                                                        "Het.Stat"=gene.mr.all@Heter.Stat[1], "Het.Stat.P"=gene.mr.all@Heter.Stat[2],
+                                                                        "Symbol"=i.symbol, "Method"="MR-Egger"))
+          } else if(nrow(qtl.summary) != 0){
+            # is there a robust estimator for this method?
+            gene.mr.all <- mr_maxlik(object=gene.mr.in)
+            # capture the maximum likelihood esults
+            eqtl.tabix.list[[i.gene]] <- do.call(cbind.data.frame, list("Gene"=i.gene, "BETA.Causal"=gene.mr.all@Estimate, "BETA.SE"=gene.mr.all@StdError,
+                                                                        "BETA.P"=gene.mr.all@Pvalue, "Intercept"=1,
+                                                                        "SNP"=x.snp, "Dataset"=data.set,
+                                                                        "Het.Stat"=gene.mr.all@Heter.Stat[1], "Het.Stat.P"=gene.mr.all@Heter.Stat[2], 
+                                                                        "Symbol"=i.symbol, "Method"="MR-Maxlik"))
+          }
+        }
+      }
+    }
+    
+    if(length(eqtl.tabix.list)){
+      eqtl.tabix.mr <- do.call(rbind.data.frame, eqtl.tabix.list)
+      # remove genes with non-estimated parameters
+      eqtl.tabix.mr <- eqtl.tabix.mr[!is.na(eqtl.tabix.mr$BETA.P), ]
+      eqtl.tabix.mr$Symbol <- as.character(eqtl.tabix.mr$Symbol)
+      eqtl.tabix.mr$Gene <- as.character(eqtl.tabix.mr$Gene)
+      eqtl.tabix.mr$Symbol[eqtl.tabix.mr$Symbol %in% c("NA")] <- eqtl.tabix.mr$Gene[eqtl.tabix.mr$Symbol %in% c("NA")]
+      # multiple testing adjustment
+      eqtl.tabix.mr$Padjust <- p.adjust(eqtl.tabix.mr$BETA.P)
+      eqtl.tabix.mr$Sig <- as.character(as.numeric(eqtl.tabix.mr$Padjust <= 0.05))
+      
+      all.mono.mr.list[[paste(x.snp, data.set, sep="_")]] <- eqtl.tabix.mr
+      
+    }
+  }
+}
+
+mono.mr.df <- do.call(rbind.data.frame,
+                       all.mono.mr.list)
+
+write.table(mono.mr.df,
+            file="MR_analysis/MI_Monocyte-MR.txt",
+            sep="\t", quote=FALSE, row.names=FALSE)
+```
+
+
+
+### Granulocytes
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+# extract the 200kb window around the lead SNP with an association p<=1e-6
+# this is the directory to the bgzipped and tabix-index association results files
+mlma.dir <- "Mileu_interieur/GCTA_assoc/"
+
+# loop over each variability-QTL
+granulo.var.qtls <- varqtl.clump[varqtl.clump$Measure %in% c("Variability") &
+                                 varqtl.clump$Cohort %in% c("Milieu Intérieur") & 
+                                 grepl(varqtl.clump$HarmonCell, pattern="phil") &
+                                 varqtl.clump$SigTier %in% c("Top", "Second"), ]
+granulo.var.snps <- unique(granulo.var.qtls$SNP)
+all.granulo.mr.list <- list()
+all.granulo.mrplot.list <- list()
+
+# The Kasela paper doesn't report BETAs!?!?!?!
+ishigaki.PB.files <- list.files(paste0(ishigaki.dir, "PB"))
+chen.neutro.file <- paste0(chen.dir, "Chen_neutrophil.tsv.bgz")
+
+granulo.data.dirs <- list("Ishigaki.PB"=ishigaki.PB.files, "Chen.Neutrophil"=chen.neutro.file)
+
+for(x in seq_along(granulo.var.snps)){
+  x.snp <- granulo.var.snps[x]
+  lead.chr <- granulo.var.qtls[granulo.var.qtls$SNP %in% x.snp, ]$CHR
+  lead.bp <- granulo.var.qtls[granulo.var.qtls$SNP %in% x.snp, ]$BP
+  lead.trait <- granulo.var.qtls[granulo.var.qtls$SNP %in% x.snp, ]$FullTrait
+  short.trait <- granulo.var.qtls[granulo.var.qtls$SNP %in% x.snp, ]$HarmonTraits
+  
+  mlma.files <- list.files(mlma.dir, pattern=lead.trait)
+  ins.chr <- lead.chr
+  
+  mlma.file <- mlma.files[grepl(mlma.files, pattern=paste0("-Chr", ins.chr, ".mlma.bgz$"))]
+  mlma.tabix <- paste0("tabix ", paste0(mlma.dir, mlma.file), " ", lead.chr, ":", lead.bp-1e5, "-", lead.bp+1e5)
+  mlma.tabix.call <- system(command=mlma.tabix, intern=TRUE)  
+  mlma.tabix.out <- do.call(rbind.data.frame,
+                            sapply(mlma.tabix.call, USE.NAMES=FALSE, FUN=function(X) strsplit(X, split="\t", fixed=TRUE)))
+  colnames(mlma.tabix.out) <- c("CHR", "SNP", "BP", "A1", "A2", "MAF", "BETA", "SE", "P")
+  mlma.tabix.out$P <- as.numeric(as.character(mlma.tabix.out$P))
+  mlma.tabix.out$BETA <- as.numeric(as.character(mlma.tabix.out$BETA))
+  mlma.tabix.out$SE <- as.numeric(as.character(mlma.tabix.out$SE))
+  mlma.tabix.out$SNP <- as.character(mlma.tabix.out$SNP)
+  mlma.tabix.out$BP <- as.numeric(as.character(mlma.tabix.out$BP))
+
+  # subset the DICE B cell eQTL results to the same SNPs
+  # SNP names may not match, try on position as well
+  qtl.snps <- mlma.tabix.out[mlma.tabix.out$P <= 1e-5, ]$SNP
+  
+  # iterate through the T cell eQTL results
+  ishigaki.t <- FALSE
+  for(q in seq_along(names(granulo.data.dirs))){
+    data.set <- names(granulo.data.dirs)[q]
+    data.files <- granulo.data.dirs[[data.set]]
+    
+    # need to treat Ishigaki and others differently
+    if(grepl(data.set, pattern="Ishigaki")){
+      ishigaki.t <- TRUE
+    } else{
+      ishigaki.t <- FALSE
+    }
+    # check for tabix file if no Ishigaki
+    qtl.files <- data.files[grepl(data.files, pattern="txt.bgz$")]
+    if(length(qtl.files) > 1 & !isTRUE(ishigaki.t)){
+      # if there are multiple files there are multiple chromosomes
+      # extract the trait name
+      cell.name <- unique(unlist(lapply(strsplit(qtl.files, fixed=TRUE, split="-"), FUN=function(L) paste0(L[2]))))
+      # check there is only one
+      if(length(cell.name) > 1){
+        cell.name <- cell.name[1]
+      }
+      eqtl.file <- paste0(dice.dir, paste0("Chr",lead.chr,"-",cell.name))
+      eqtl.tabix <- paste0("tabix ", eqtl.file, " ", lead.chr, ":", lead.bp-1e5, "-", lead.bp+1e5)
+      eqtl.tabix.call <- system(command=eqtl.tabix, intern=TRUE)
+      eqtl.tabix.out <- do.call(rbind.data.frame,
+                                sapply(eqtl.tabix.call, FUN=function(X) strsplit(X, split="\t", fixed=TRUE)))
+      
+      if(nrow(eqtl.tabix.out)){
+        if(grepl(data.set, pattern="DICE")){
+          colnames(eqtl.tabix.out) <- c("CHR", "BP", "SNP", "GENE", "BETA", "P")
+        } else if(grepl(data.set, pattern="Chen")){
+          colnames(eqtl.tabix.out) <- c("CHR", "BP", "A1", "A2", "SNP", "GENE", "P", "BETA", "BONFP", "FDR", "MAF", "SE")
+        }
+        
+        eqtl.tabix.out$P <- as.numeric(as.character(eqtl.tabix.out$P))
+        eqtl.tabix.out$BETA <- as.numeric(as.character(eqtl.tabix.out$BETA))
+        eqtl.tabix.out$BP <- as.numeric(as.character(eqtl.tabix.out$BP))
+      }
+    } else if(isTRUE(ishigaki.t)){
+      # This means it is the Ishigaki data - no tabix query needed
+      chr.file <- data.files[grepl(data.files, pattern=paste0("chr", lead.chr, "_cis"))]
+      granulo.type <- gsub(data.set, pattern="Ishigaki\\.", replacement="")
+      eqtl.tabix.out <- read.table(paste0(paste0(ishigaki.dir, granulo.type, "/"), chr.file),
+                                   sep="\t", header=TRUE, stringsAsFactors=FALSE)
+      colnames(eqtl.tabix.out) <- c("SNP", "GENE", "BETA", "STAT", "P")
+      # calculate SE as beta/t-stat
+      eqtl.tabix.out$SE <- eqtl.tabix.out$BETA/eqtl.tabix.out$STAT
+    }
+    
+    if(sum(eqtl.tabix.out$SNP %in% unique(qtl.snps)) == 0 & nrow(eqtl.tabix.out)){
+      qtl.bps <- mlma.tabix.out[mlma.tabix.out$P <= 1e-5, ]$BP
+      # if no BP info then skip
+      if(grepl(colnames(eqtl.tabix.out), pattern="BP")){
+        eqtl.tabix.snps <- eqtl.tabix.out[eqtl.tabix.out$BP %in% unique(qtl.bps), ]
+      } else{
+        eqtl.tabix.snps <- c()
+      }
+    }
+    else{
+      eqtl.tabix.snps <- eqtl.tabix.out[eqtl.tabix.out$SNP %in% unique(qtl.snps), ]
+    }
+    
+    eqtl.tabix.list <- list()
+    eqtl.tabix.genes <- unique(as.character(eqtl.tabix.snps$GENE))
+        
+    for(i in seq_along(eqtl.tabix.genes)){
+      i.gene <- as.character(eqtl.tabix.genes[i])
+          
+      # select SNPs with p<= 1e-1?
+      i.summary <- eqtl.tabix.snps[eqtl.tabix.snps$GENE %in% i.gene, ]
+      i.summary <- i.summary[i.summary$P <= 0.05, ]
+      rownames(i.summary) <- i.summary$SNP
+      
+      # remove SNPs with redundant information
+      redundant.eqtl.snps <- rownames(i.summary)[duplicated(i.summary$BETA)]
+      i.summary <- i.summary[!i.summary$SNP %in% redundant.eqtl.snps, ]
+      
+      qtl.summary <- mlma.tabix.out[mlma.tabix.out$SNP %in% i.summary$SNP, ]
+      rownames(qtl.summary) <- qtl.summary$SNP
+      redundant.snps <- rownames(qtl.summary)[duplicated(qtl.summary$P) & duplicated(qtl.summary$SE) & duplicated(qtl.summary$MAF)]
+      qtl.summary <- qtl.summary[!qtl.summary$SNP %in% redundant.snps, ]
+      i.summary <- i.summary[!i.summary$SNP %in% redundant.snps, ]
+    
+      # check for the same SNPs
+      # select the matching SNPs from the varQTL
+      # if all the SNPs are good then proceed
+      if(all(rownames(i.summary) == rownames(qtl.summary))){
+        i.beta <- as.numeric(as.character(i.summary$BETA))
+        names(i.beta) <- rownames(i.summary)
+      
+        # if there is no SE then assume the p-value is derived from a standard normal
+        i.se <- as.numeric(as.character(i.summary$SE))
+        if(length(i.se) == 0){
+          i.p <- as.numeric(as.character(i.summary$P))
+          i.z <- qnorm(1-i.p)
+          i.se <- i.beta/i.z
+          names(i.se) <- rownames(i.summary)
+        }
+    
+        if(any(abs(i.beta) > 0)){
+          # create an mr_input object
+          # I think there is so little correlation it doesn't matter
+          # remove SNPs with undefined SE and/or beta=0
+          i.se <- i.se[abs(i.beta) > 0]
+          i.beta <- i.beta[abs(i.beta) > 0]
+          
+          qtl.summary <- qtl.summary[names(i.beta), ]
+          rownames(qtl.summary) <- qtl.summary$SNP
+          qtl.beta <- as.numeric(as.character(qtl.summary$BETA))
+          qtl.se <- as.numeric(as.character(qtl.summary$SE))
+          
+          # there is only limited LD information available so I should just remove
+          # SNPs that are perfectly correlated as this is redundant information
+          gene.mr.in <- mr_input(bx=i.beta, bxse=i.se, by=qtl.beta, byse=qtl.se,
+                                 exposure=i.gene, outcome=short.trait, snps=rownames(qtl.summary))
+      
+          # calculate the MR using robust Egger regression if there are multiple SNPs
+          # otherwise use regular MR
+          i.symbol <- allgene.df$external_gene_name[allgene.df$ensembl_gene_id %in% gsub(i.gene, pattern="\\.[0-9]*", replacement="")]
+          
+          if(!length(i.symbol)){
+            i.symbol <- "NA"
+          }
+          
+          if(nrow(qtl.summary) > 2){
+            gene.mr.all <- mr_egger(object=gene.mr.in, robust=TRUE)
+            # capture the penalized robust MR-egger results
+            eqtl.tabix.list[[i.gene]] <- do.call(cbind.data.frame, list("Gene"=i.gene, "BETA.Causal"=gene.mr.all@Estimate,
+                                                                        "BETA.SE"=gene.mr.all@StdError.Est,
+                                                                        "BETA.P"=gene.mr.all@Pvalue.Est, "Intercept"=gene.mr.all@Intercept,
+                                                                        "SNP"=x.snp, "Dataset"=data.set,
+                                                                        "Het.Stat"=gene.mr.all@Heter.Stat[1], "Het.Stat.P"=gene.mr.all@Heter.Stat[2],
+                                                                        "Symbol"=i.symbol, "Method"="MR-Egger"))
+          } else if(nrow(qtl.summary) != 0){
+            # is there a robust estimator for this method?
+            gene.mr.all <- mr_maxlik(object=gene.mr.in)
+            # capture the maximum likelihood esults
+            eqtl.tabix.list[[i.gene]] <- do.call(cbind.data.frame, list("Gene"=i.gene, "BETA.Causal"=gene.mr.all@Estimate, "BETA.SE"=gene.mr.all@StdError,
+                                                                        "BETA.P"=gene.mr.all@Pvalue, "Intercept"=1,
+                                                                        "SNP"=x.snp, "Dataset"=data.set,
+                                                                        "Het.Stat"=gene.mr.all@Heter.Stat[1], "Het.Stat.P"=gene.mr.all@Heter.Stat[2], 
+                                                                        "Symbol"=i.symbol, "Method"="MR-Maxlik"))
+          }
+        }
+      }
+    }
+    
+    if(length(eqtl.tabix.list)){
+      eqtl.tabix.mr <- do.call(rbind.data.frame, eqtl.tabix.list)
+      # remove genes with non-estimated parameters
+      eqtl.tabix.mr <- eqtl.tabix.mr[!is.na(eqtl.tabix.mr$BETA.P), ]
+      eqtl.tabix.mr$Symbol <- as.character(eqtl.tabix.mr$Symbol)
+      eqtl.tabix.mr$Gene <- as.character(eqtl.tabix.mr$Gene)
+      eqtl.tabix.mr$Symbol[eqtl.tabix.mr$Symbol %in% c("NA")] <- eqtl.tabix.mr$Gene[eqtl.tabix.mr$Symbol %in% c("NA")]
+      # multiple testing adjustment
+      eqtl.tabix.mr$Padjust <- p.adjust(eqtl.tabix.mr$BETA.P)
+      eqtl.tabix.mr$Sig <- as.character(as.numeric(eqtl.tabix.mr$Padjust <= 0.05))
+      
+      all.granulo.mr.list[[paste(x.snp, data.set, sep="_")]] <- eqtl.tabix.mr
+      
+    }
+  }
+}
+
+granulo.mr.df <- do.call(rbind.data.frame,
+                       all.granulo.mr.list)
+
+write.table(granulo.mr.df,
+            file="MR_analysis/MI_Granulocyte-MR.txt",
+            sep="\t", quote=FALSE, row.names=FALSE)
+```
+
+
+
+### NK cells
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+# extract the 200kb window around the lead SNP with an association p<=1e-6
+# this is the directory to the bgzipped and tabix-index association results files
+mlma.dir <- "Mileu_interieur/GCTA_assoc/"
+
+# loop over each variability-QTL
+nkcell.var.qtls <- varqtl.clump[varqtl.clump$Measure %in% c("Variability") &
+                                 varqtl.clump$Cohort %in% c("Milieu Intérieur") & 
+                                 grepl(varqtl.clump$HarmonCell, pattern="NKcells") &
+                                 varqtl.clump$SigTier %in% c("Top", "Second"), ]
+nkcell.var.snps <- unique(nkcell.var.qtls$SNP)
+all.nkcell.mr.list <- list()
+all.nkcell.mrplot.list <- list()
+
+# The Kasela paper doesn't report BETAs!?!?!?!
+ishigaki.NK.files <- list.files(paste0(ishigaki.dir, "NK"))
+chen.neutro.file <- paste0(chen.dir, "Chen_neutrophil.tsv.bgz")
+
+nkcell.data.dirs <- list("Ishigaki.NK"=ishigaki.NK.files, "DICE.NK"=list.files(dice.dir, pattern="NK"))
+
+for(x in seq_along(nkcell.var.snps)){
+  x.snp <- nkcell.var.snps[x]
+  lead.chr <- nkcell.var.qtls[nkcell.var.qtls$SNP %in% x.snp, ]$CHR
+  lead.bp <- nkcell.var.qtls[nkcell.var.qtls$SNP %in% x.snp, ]$BP
+  lead.trait <- nkcell.var.qtls[nkcell.var.qtls$SNP %in% x.snp, ]$FullTrait
+  short.trait <- nkcell.var.qtls[nkcell.var.qtls$SNP %in% x.snp, ]$HarmonTraits
+  
+  mlma.files <- list.files(mlma.dir, pattern=lead.trait)
+  ins.chr <- lead.chr
+  
+  mlma.file <- mlma.files[grepl(mlma.files, pattern=paste0("-Chr", ins.chr, ".mlma.bgz$"))]
+  mlma.tabix <- paste0("tabix ", paste0(mlma.dir, mlma.file), " ", lead.chr, ":", lead.bp-1e5, "-", lead.bp+1e5)
+  mlma.tabix.call <- system(command=mlma.tabix, intern=TRUE)  
+  mlma.tabix.out <- do.call(rbind.data.frame,
+                            sapply(mlma.tabix.call, USE.NAMES=FALSE, FUN=function(X) strsplit(X, split="\t", fixed=TRUE)))
+  colnames(mlma.tabix.out) <- c("CHR", "SNP", "BP", "A1", "A2", "MAF", "BETA", "SE", "P")
+  mlma.tabix.out$P <- as.numeric(as.character(mlma.tabix.out$P))
+  mlma.tabix.out$BETA <- as.numeric(as.character(mlma.tabix.out$BETA))
+  mlma.tabix.out$SE <- as.numeric(as.character(mlma.tabix.out$SE))
+  mlma.tabix.out$SNP <- as.character(mlma.tabix.out$SNP)
+  mlma.tabix.out$BP <- as.numeric(as.character(mlma.tabix.out$BP))
+
+  # subset the DICE B cell eQTL results to the same SNPs
+  # SNP names may not match, try on position as well
+  qtl.snps <- mlma.tabix.out[mlma.tabix.out$P <= 1e-5, ]$SNP
+  
+  # iterate through the T cell eQTL results
+  ishigaki.t <- FALSE
+  for(q in seq_along(names(nkcell.data.dirs))){
+    data.set <- names(nkcell.data.dirs)[q]
+    data.files <- nkcell.data.dirs[[data.set]]
+    
+    # need to treat Ishigaki and others differently
+    if(grepl(data.set, pattern="Ishigaki")){
+      ishigaki.t <- TRUE
+    } else{
+      ishigaki.t <- FALSE
+    }
+    # check for tabix file if no Ishigaki
+    qtl.files <- data.files[grepl(data.files, pattern="txt.bgz$")]
+    if(length(qtl.files) > 1 & !isTRUE(ishigaki.t)){
+      # if there are multiple files there are multiple chromosomes
+      # extract the trait name
+      cell.name <- unique(unlist(lapply(strsplit(qtl.files, fixed=TRUE, split="-"), FUN=function(L) paste0(L[2]))))
+      # check there is only one
+      if(length(cell.name) > 1){
+        cell.name <- cell.name[1]
+      }
+      eqtl.file <- paste0(dice.dir, paste0("Chr",lead.chr,"-",cell.name))
+      eqtl.tabix <- paste0("tabix ", eqtl.file, " ", lead.chr, ":", lead.bp-1e5, "-", lead.bp+1e5)
+      eqtl.tabix.call <- system(command=eqtl.tabix, intern=TRUE)
+      eqtl.tabix.out <- do.call(rbind.data.frame,
+                                sapply(eqtl.tabix.call, FUN=function(X) strsplit(X, split="\t", fixed=TRUE)))
+      
+      if(nrow(eqtl.tabix.out)){
+        if(grepl(data.set, pattern="DICE")){
+          colnames(eqtl.tabix.out) <- c("CHR", "BP", "SNP", "GENE", "BETA", "P")
+        } else if(grepl(data.set, pattern="Chen")){
+          colnames(eqtl.tabix.out) <- c("CHR", "BP", "A1", "A2", "SNP", "GENE", "P", "BETA", "BONFP", "FDR", "MAF", "SE")
+        }
+        
+        eqtl.tabix.out$P <- as.numeric(as.character(eqtl.tabix.out$P))
+        eqtl.tabix.out$BETA <- as.numeric(as.character(eqtl.tabix.out$BETA))
+        eqtl.tabix.out$BP <- as.numeric(as.character(eqtl.tabix.out$BP))
+      }
+    } else if(isTRUE(ishigaki.t)){
+      # This means it is the Ishigaki data - no tabix query needed
+      chr.file <- data.files[grepl(data.files, pattern=paste0("chr", lead.chr, "_cis"))]
+      nkcell.type <- gsub(data.set, pattern="Ishigaki\\.", replacement="")
+      eqtl.tabix.out <- read.table(paste0(paste0(ishigaki.dir, nkcell.type, "/"), chr.file),
+                                   sep="\t", header=TRUE, stringsAsFactors=FALSE)
+      colnames(eqtl.tabix.out) <- c("SNP", "GENE", "BETA", "STAT", "P")
+      # calculate SE as beta/t-stat
+      eqtl.tabix.out$SE <- eqtl.tabix.out$BETA/eqtl.tabix.out$STAT
+    }
+    
+    if(sum(eqtl.tabix.out$SNP %in% unique(qtl.snps)) == 0 & nrow(eqtl.tabix.out)){
+      qtl.bps <- mlma.tabix.out[mlma.tabix.out$P <= 1e-5, ]$BP
+      # if no BP info then skip
+      if(grepl(colnames(eqtl.tabix.out), pattern="BP")){
+        eqtl.tabix.snps <- eqtl.tabix.out[eqtl.tabix.out$BP %in% unique(qtl.bps), ]
+      } else{
+        eqtl.tabix.snps <- c()
+      }
+    }
+    else{
+      eqtl.tabix.snps <- eqtl.tabix.out[eqtl.tabix.out$SNP %in% unique(qtl.snps), ]
+    }
+    
+    eqtl.tabix.list <- list()
+    eqtl.tabix.genes <- unique(as.character(eqtl.tabix.snps$GENE))
+        
+    for(i in seq_along(eqtl.tabix.genes)){
+      i.gene <- as.character(eqtl.tabix.genes[i])
+          
+      # select SNPs with p<= 1e-1?
+      i.summary <- eqtl.tabix.snps[eqtl.tabix.snps$GENE %in% i.gene, ]
+      i.summary <- i.summary[i.summary$P <= 0.05, ]
+      rownames(i.summary) <- i.summary$SNP
+      
+      # remove SNPs with redundant information
+      redundant.eqtl.snps <- rownames(i.summary)[duplicated(i.summary$BETA)]
+      i.summary <- i.summary[!i.summary$SNP %in% redundant.eqtl.snps, ]
+      
+      qtl.summary <- mlma.tabix.out[mlma.tabix.out$SNP %in% i.summary$SNP, ]
+      rownames(qtl.summary) <- qtl.summary$SNP
+      redundant.snps <- rownames(qtl.summary)[duplicated(qtl.summary$P) & duplicated(qtl.summary$SE) & duplicated(qtl.summary$MAF)]
+      qtl.summary <- qtl.summary[!qtl.summary$SNP %in% redundant.snps, ]
+      i.summary <- i.summary[!i.summary$SNP %in% redundant.snps, ]
+    
+      # check for the same SNPs
+      # select the matching SNPs from the varQTL
+      # if all the SNPs are good then proceed
+      if(all(rownames(i.summary) == rownames(qtl.summary))){
+        i.beta <- as.numeric(as.character(i.summary$BETA))
+        names(i.beta) <- rownames(i.summary)
+      
+        # if there is no SE then assume the p-value is derived from a standard normal
+        i.se <- as.numeric(as.character(i.summary$SE))
+        if(length(i.se) == 0){
+          i.p <- as.numeric(as.character(i.summary$P))
+          i.z <- qnorm(1-i.p)
+          i.se <- i.beta/i.z
+          names(i.se) <- rownames(i.summary)
+        }
+    
+        if(any(abs(i.beta) > 0)){
+          # create an mr_input object
+          # I think there is so little correlation it doesn't matter
+          # remove SNPs with undefined SE and/or beta=0
+          i.se <- i.se[abs(i.beta) > 0]
+          i.beta <- i.beta[abs(i.beta) > 0]
+          
+          qtl.summary <- qtl.summary[names(i.beta), ]
+          rownames(qtl.summary) <- qtl.summary$SNP
+          qtl.beta <- as.numeric(as.character(qtl.summary$BETA))
+          qtl.se <- as.numeric(as.character(qtl.summary$SE))
+          
+          # there is only limited LD information available so I should just remove
+          # SNPs that are perfectly correlated as this is redundant information
+          gene.mr.in <- mr_input(bx=i.beta, bxse=i.se, by=qtl.beta, byse=qtl.se,
+                                 exposure=i.gene, outcome=short.trait, snps=rownames(qtl.summary))
+      
+          # calculate the MR using robust Egger regression if there are multiple SNPs
+          # otherwise use regular MR
+          i.symbol <- allgene.df$external_gene_name[allgene.df$ensembl_gene_id %in% gsub(i.gene, pattern="\\.[0-9]*", replacement="")]
+          
+          if(!length(i.symbol)){
+            i.symbol <- "NA"
+          }
+          
+          if(nrow(qtl.summary) > 2){
+            gene.mr.all <- mr_egger(object=gene.mr.in, robust=TRUE)
+            # capture the penalized robust MR-egger results
+            eqtl.tabix.list[[i.gene]] <- do.call(cbind.data.frame, list("Gene"=i.gene, "BETA.Causal"=gene.mr.all@Estimate,
+                                                                        "BETA.SE"=gene.mr.all@StdError.Est,
+                                                                        "BETA.P"=gene.mr.all@Pvalue.Est, "Intercept"=gene.mr.all@Intercept,
+                                                                        "SNP"=x.snp, "Dataset"=data.set,
+                                                                        "Het.Stat"=gene.mr.all@Heter.Stat[1], "Het.Stat.P"=gene.mr.all@Heter.Stat[2],
+                                                                        "Symbol"=i.symbol, "Method"="MR-Egger"))
+          } else if(nrow(qtl.summary) != 0){
+            # is there a robust estimator for this method?
+            gene.mr.all <- mr_maxlik(object=gene.mr.in)
+            # capture the maximum likelihood esults
+            eqtl.tabix.list[[i.gene]] <- do.call(cbind.data.frame, list("Gene"=i.gene, "BETA.Causal"=gene.mr.all@Estimate, "BETA.SE"=gene.mr.all@StdError,
+                                                                        "BETA.P"=gene.mr.all@Pvalue, "Intercept"=1,
+                                                                        "SNP"=x.snp, "Dataset"=data.set,
+                                                                        "Het.Stat"=gene.mr.all@Heter.Stat[1], "Het.Stat.P"=gene.mr.all@Heter.Stat[2], 
+                                                                        "Symbol"=i.symbol, "Method"="MR-Maxlik"))
+          }
+        }
+      }
+    }
+    
+    if(length(eqtl.tabix.list)){
+      eqtl.tabix.mr <- do.call(rbind.data.frame, eqtl.tabix.list)
+      # remove genes with non-estimated parameters
+      eqtl.tabix.mr <- eqtl.tabix.mr[!is.na(eqtl.tabix.mr$BETA.P), ]
+      eqtl.tabix.mr$Symbol <- as.character(eqtl.tabix.mr$Symbol)
+      eqtl.tabix.mr$Gene <- as.character(eqtl.tabix.mr$Gene)
+      eqtl.tabix.mr$Symbol[eqtl.tabix.mr$Symbol %in% c("NA")] <- eqtl.tabix.mr$Gene[eqtl.tabix.mr$Symbol %in% c("NA")]
+      # multiple testing adjustment
+      eqtl.tabix.mr$Padjust <- p.adjust(eqtl.tabix.mr$BETA.P)
+      eqtl.tabix.mr$Sig <- as.character(as.numeric(eqtl.tabix.mr$Padjust <= 0.05))
+      
+      all.nkcell.mr.list[[paste(x.snp, data.set, sep="_")]] <- eqtl.tabix.mr
+      
+    }
+  }
+}
+
+nkcell.mr.df <- do.call(rbind.data.frame,
+                       all.nkcell.mr.list)
+
+write.table(nkcell.mr.df,
+            file="MR_analysis/MI_NKcell-MR.txt",
+            sep="\t", quote=FALSE, row.names=FALSE)
+```
+
+Unfortunately I can't test any of the dendritic cell var-QTLs as there is no matching eQTL data for these cells.
+
+```{r}
+table(varqtl.clump[varqtl.clump$Measure %in% c("Variability") &
+                     varqtl.clump$Cohort %in% c("Milieu Intérieur") & 
+                     varqtl.clump$SigTier %in% c("Top", "Second"), ]$HarmonCell)
+```
+
+
+
+
+
