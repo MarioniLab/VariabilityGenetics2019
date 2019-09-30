@@ -8,16 +8,19 @@ pipeline to full recreate the analysis performed.
 Following is the directory structure for each top-level directory.
 
 Python:
+
        * LIMIX
        * Processing
 
 Rscript:
+
 	* FlowCytometry_Processing
 	* Variance_Components_Analysis
 	* Post_QTL_Processing
 	* Mendelian_Randomisation
 
 Bash:
+
      * GRM
      * QTL_mapping
      * Post_QTL_Processing
