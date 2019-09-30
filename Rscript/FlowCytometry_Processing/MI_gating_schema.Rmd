@@ -22,10 +22,10 @@ library(openCyto)
 library(flowViz)
 library(ggcyto)
 library(ggplot2)
-source("~/Dropbox/R_sessions/GGMike/theme_mike.R")
+source("GGMike/theme_mike.R")
 
-print("Panel 1A")
-path.to.files <- "~/Dropbox/Noise_FACS/Replication_cohorts/Milieu_Interieur/fcs_files/"
+print("Panel 1")
+path.to.files <- "Milieu_Interieur/fcs_files/"
 
 P1.flow.data <- read.flowSet(path=path.to.files,
                              transformation=FALSE, pattern="P01")
@@ -141,7 +141,7 @@ cd3.p <- ggcyto(P1.warping[1], aes(x=`CD3-A`, y=`SSC-A`)) +
   geom_gate(cd3.gates)
 
 ggsave(cd3.p,
-       filename="~/Dropbox/Noise_FACS/Replication_cohorts/Milieu_Interieur/plot.dir/P1_cd3_gate.png",
+       filename="plot.dir/P1_cd3_gate.png",
        height=2.75, width=2.75, dpi=300)
 
 cd3.p
@@ -176,7 +176,7 @@ singlet.p <- ggcyto(P1.cd3[1], aes(x=`FSC-H`, y=`FSC-W`)) +
   geom_gate(singlet.gates)
 
 ggsave(singlet.p,
-       filename="~/Dropbox/Noise_FACS/Replication_cohorts/Milieu_Interieur/plot.dir/P1_singlet_gate.png",
+       filename="plot.dir/P1_singlet_gate.png",
        height=2.75, width=2.75, dpi=300)
 
 singlet.p
@@ -215,7 +215,7 @@ cov.p <- ggcyto(P1.singlet[1], aes(x=`SSC-H`, y=`SSC-A`)) +
   geom_gate(ssc.ellipsoid)
 
 ggsave(cov.p,
-       filename="~/Dropbox/Noise_FACS/Replication_cohorts/Milieu_Interieur/plot.dir/P1_covar_gate.png",
+       filename="plot.dir/P1_covar_gate.png",
        height=2.75, width=2.75, dpi=300)
 
 cov.p
@@ -311,7 +311,7 @@ tcell.p <- ggcyto(P1.gs[1], aes(x=`R2-A`, y=`B4-A`), subset="root") +
   geom_gate(DP.gate)
 
 ggsave(tcell.p,
-       filename="~/Dropbox/Noise_FACS/Replication_cohorts/Milieu_Interieur/plot.dir/P1_tcell_gate.png",
+       filename="plot.dir/P1_tcell_gate.png",
        height=2.75, width=2.75, dpi=300)
 
 tcell.p
@@ -540,7 +540,7 @@ p.memory <- ggcyto(P1.CD4.gs[1], aes(x=`B3-A`, y=`B1-A`), subset="root") +
   geom_gate(temra.gate)
 
 ggsave(p.memory,
-       filename="~/Dropbox/Noise_FACS/Replication_cohorts/Milieu_Interieur/plot.dir/P1_memory_gate.png",
+       filename="plot.dir/P1_memory_gate.png",
        height=2.75, width=2.75, dpi=300)
 
 p.memory
@@ -564,8 +564,7 @@ source("~/Dropbox/R_sessions/GGMike/theme_mike.R")
 ### Panel 2 - Regulatory T cell subsets ##
 ##########################################
 
-print("Panel 2A")
-path.to.files <- "~/Dropbox/Noise_FACS/Replication_cohorts/Milieu_Interieur/fcs_files/"
+print("Panel 2")
 P2.flow.data <- read.flowSet(path=path.to.files,
                              transformation=FALSE, pattern="P02")
 sample.ids <- unlist(lapply(strsplit(x=sampleNames(P2.flow.data), split="-", fixed=TRUE),
@@ -655,7 +654,7 @@ leuko.p <- ggcyto(P2.fs_filt[1], aes(x=`FSC-A`, y=`SSC-A`)) +
   geom_gate(leuko.gates)
 
 ggsave(leuko.p,
-       filename="~/Dropbox/Noise_FACS/Replication_cohorts/Milieu_Interieur/plot.dir/P2_leuko_gate.png",
+       filename="plot.dir/P2_leuko_gate.png",
        height=2.75, width=2.75, dpi=300)
 
 leuko.p
@@ -718,7 +717,7 @@ singlet.p <- ggcyto(P2.gs[1], aes(x=`FSC-H`, y=`FSC-W`), subset="root") +
   geom_gate(singlet.gate)
 
 ggsave(singlet.p,
-       filename="~/Dropbox/Noise_FACS/Replication_cohorts/Milieu_Interieur/plot.dir/P2_singlet_gate.png",
+       filename="plot.dir/P2_singlet_gate.png",
        height=2.75, width=2.75, dpi=300)
 
 singlet.p
@@ -747,7 +746,7 @@ covar.p <- ggcyto(P2.gs[1], aes(x=`SSC-A`, y=`FSC-H`), subset="Singlet") +
   geom_gate(ssc.ellipsoid)
 
 ggsave(covar.p,
-       filename="~/Dropbox/Noise_FACS/Replication_cohorts/Milieu_Interieur/plot.dir/P2_covar_gate.png",
+       filename="plot.dir/P2_covar_gate.png",
        height=2.75, width=2.75, dpi=300)
 
 covar.p
@@ -778,7 +777,7 @@ live.p <- ggcyto(P2.gs[1], aes(x=`SSC-A`, y=`V2-A`), subset="SSC.Ellipse") +
   geom_gate(viability.gate)
 
 ggsave(live.p,
-       filename="~/Dropbox/Noise_FACS/Replication_cohorts/Milieu_Interieur/plot.dir/P2_live_gate.png",
+       filename="plot.dir/P2_live_gate.png",
        height=2.75, width=2.75, dpi=300)
 
 live.p
@@ -827,7 +826,7 @@ tcell.p <- ggcyto(P2.gs[1], aes(x=`R2-A`, y=`B4-A`), subset="Live") +
   geom_gate(DP.gate)
 
 ggsave(tcell.p,
-       filename="~/Dropbox/Noise_FACS/Replication_cohorts/Milieu_Interieur/plot.dir/P2_tcell_gate.png",
+       filename="plot.dir/P2_tcell_gate.png",
        height=2.75, width=2.75, dpi=300)
 
 tcell.p
@@ -987,7 +986,7 @@ treg.p <- ggcyto(P2.CD4.gs[1], aes(x=`B2-A`, y=`R1-A`), subset="root") +
   geom_gate(treg.gate)
 
 ggsave(treg.p,
-       filename="~/Dropbox/Noise_FACS/Replication_cohorts/Milieu_Interieur/plot.dir/P2_Treg_gate.png",
+       filename="plot.dir/P2_Treg_gate.png",
        height=2.75, width=2.75, dpi=300)
 
 treg.p
@@ -1051,7 +1050,7 @@ subt.p <- ggcyto(P2.CD4.gs[1], aes(x=`B3-A`, y=`B1-A`), subset="/Treg") +
   geom_gate(tregem.gate)
 
 ggsave(subt.p,
-       filename="~/Dropbox/Noise_FACS/Replication_cohorts/Milieu_Interieur/plot.dir/P2_subTreg_gate.png",
+       filename="plot.dir/P2_subTreg_gate.png",
        height=2.75, width=2.75, dpi=300)
 
 subt.p
@@ -1073,10 +1072,8 @@ sink(file=NULL)
 ###############################
 ### Panel 3 - MAIT/NKT cells ##
 ###############################
-source("~/Dropbox/R_sessions/GGMike/theme_mike.R")
 
-print("Panel 3A")
-path.to.files <- "~/Dropbox/Noise_FACS/Replication_cohorts/Milieu_Interieur/fcs_files/"
+print("Panel 3")
 P3.flow.data <- read.flowSet(path=path.to.files,
                              transformation=FALSE, pattern="P03")
 sample.ids <- unlist(lapply(strsplit(x=sampleNames(P3.flow.data), split="-", fixed=TRUE),
@@ -1183,7 +1180,7 @@ cd3.p <- ggcyto(P3.warping[1], aes(x=`CD3-A`, y=`SSC-A`)) +
   geom_gate(cd3.gates)
 
 ggsave(cd3.p,
-       filename="~/Dropbox/Noise_FACS/Replication_cohorts/Milieu_Interieur/plot.dir/P3_cd3_gate.png",
+       filename="plot.dir/P3_cd3_gate.png",
        height=2.75, width=2.75)
 
 cd3.p
@@ -1218,7 +1215,7 @@ singlet.p <- ggcyto(P3.cd3[1], aes(x=`FSC-H`, y=`FSC-W`)) +
   geom_gate(singlet.gates)
 
 ggsave(singlet.p,
-       filename="~/Dropbox/Noise_FACS/Replication_cohorts/Milieu_Interieur/plot.dir/P3_singlet_gate.png",
+       filename="plot.dir/P3_singlet_gate.png",
        height=2.75, width=2.75, dpi=300)
 
 singlet.p
@@ -1257,7 +1254,7 @@ covar.p <- ggcyto(P3.singlet[1], aes(x=`SSC-H`, y=`SSC-A`)) +
   geom_gate(ssc.ellipsoid)
 
 ggsave(covar.p,
-       filename="~/Dropbox/Noise_FACS/Replication_cohorts/Milieu_Interieur/plot.dir/P3_covar_gate.png",
+       filename="plot.dir/P3_covar_gate.png",
        height = 2.75, width=2.75, dpi=300)
 
 covar.p
@@ -1342,7 +1339,7 @@ gdt.p <- ggcyto(P3.gs[1], aes(x=`B2-A`, y=`V1-A`), subset="root") +
   geom_gate(gdtecell.gate)
 
 ggsave(gdt.p,
-       filename="~/Dropbox/Noise_FACS/Replication_cohorts/Milieu_Interieur/plot.dir/P3_gdT_gate.png",
+       filename="plot.dir/P3_gdT_gate.png",
        height=2.75, width=2.75, dpi=300)
 gdt.p
 ```
@@ -1390,7 +1387,7 @@ tcell.p <- ggcyto(P3.gs[1], aes(x=`R2-A`, y=`B4-A`), subset="root") +
   geom_gate(DP.gate)
 
 ggsave(tcell.p,
-       filename="~/Dropbox/Noise_FACS/Replication_cohorts/Milieu_Interieur/plot.dir/P3_abT_gate.png",
+       filename="plot.dir/P3_abT_gate.png",
        height=2.75, width=2.75, dpi=300)
 
 tcell.p
@@ -1532,7 +1529,7 @@ nkt.p <- ggcyto(P3.gdt.gs[1], aes(x=`B3-A`, y=`R1-A`), subset="root") +
   geom_gate(nkt.gate)
 
 ggsave(nkt.p,
-       filename="~/Dropbox/Noise_FACS/Replication_cohorts/Milieu_Interieur/plot.dir/P3_NKT_gate.png",
+       filename="plot.dir/P3_NKT_gate.png",
        height=2.75, width=2.75, dpi=300)
 
 nkt.p
@@ -1562,7 +1559,7 @@ mait.p <- ggcyto(P3.gdt.gs[1], aes(x=`B1-A`, y=`R1-A`), subset="root") +
   geom_gate(mait.gate)
 
 ggsave(mait.p,
-       filename="~/Dropbox/Noise_FACS/Replication_cohorts/Milieu_Interieur/plot.dir/P3_MAIT_gate.png",
+       filename="plot.dir/P3_MAIT_gate.png",
        height=2.75, width=2.75, dpi=300)
 
 mait.p
@@ -1580,10 +1577,8 @@ sink(file=NULL)
 ## Panel 4
 
 ```{r}
-print("Panel 4A")
-source("~/Dropbox/R_sessions/GGMike/theme_mike.R")
+print("Panel 4")
 
-path.to.files <- "~/Dropbox/Noise_FACS/Replication_cohorts/Milieu_Interieur/fcs_files/"
 P4.flow.data <- read.flowSet(path=path.to.files,
                              transformation=FALSE, pattern="P04")
 sample.ids <- unlist(lapply(strsplit(x=sampleNames(P4.flow.data), split="-", fixed=TRUE),
@@ -1696,7 +1691,7 @@ nk.p <- ggcyto(P4.warping[1], aes(x=`V1-A`, y=`B2-A`)) +
   geom_gate(nkcell.gate)
 
 ggsave(nk.p,
-       filename="~/Dropbox/Noise_FACS/Replication_cohorts/Milieu_Interieur/plot.dir/P4_nk_gate.png",
+       filename="plot.dir/P4_nk_gate.png",
        height=2.75, width=2.75, dpi=300)
 
 nk.p
@@ -1726,7 +1721,7 @@ live.p <- ggcyto(P4.nkcells[1], aes(x=`SSC-A`, y=`V2-A`)) +
   geom_gate(live.gate)
 
 ggsave(live.p,
-       filename="~/Dropbox/Noise_FACS/Replication_cohorts/Milieu_Interieur/plot.dir/P4_live_gate.png",
+       filename="plot.dir/P4_live_gate.png",
        height=2.75, width=2.75, dpi=300)
 
 live.p
@@ -1755,7 +1750,7 @@ single.p <- ggcyto(P4.live[1], aes(x=`FSC-H`, y=`FSC-W`)) +
   geom_gate(singlet.gate)
 
 ggsave(single.p, 
-       filename = "~/Dropbox/Noise_FACS/Replication_cohorts/Milieu_Interieur/plot.dir/P4_singlet_gate.png",
+       filename = "plot.dir/P4_singlet_gate.png",
        height=2.75, width=2.75, dpi=300)
 
 single.p
@@ -1842,7 +1837,7 @@ cd56.p <- ggcyto(P4.gs[1], aes(x=`R1-A`, y=`R2-A`), subset="root") +
   geom_gate(cd56bright.gate)
 
 ggsave(cd56.p,
-       filename = "~/Dropbox/Noise_FACS/Replication_cohorts/Milieu_Interieur/plot.dir/P4_CD56_gate.png",
+       filename = "plot.dir/P4_CD56_gate.png",
        height=2.75, width=2.75, dpi=300)
 
 cd56.p
@@ -1865,10 +1860,7 @@ sink(file=NULL)
 #####################################
 ### Panel 5 - Major lineages panel ##
 #####################################
-print("Panel 5A")
-source("~/Dropbox/R_sessions/GGMike/theme_mike.R")
-
-path.to.files <- "~/Dropbox/Noise_FACS/Replication_cohorts/Milieu_Interieur/fcs_files/"
+print("Panel 5")
 
 P5.flow.data <- read.flowSet(path=path.to.files,
                              transformation=FALSE, pattern="P05")
@@ -1983,7 +1975,7 @@ cd45.p <- ggcyto(P5.fs_filt[1], aes(x=`FSC-A`, y=`B2-A`)) +
   geom_gate(haem.gate)
 
 ggsave(cd45.p,
-       filename="~/Dropbox/Noise_FACS/Replication_cohorts/Milieu_Interieur/plot.dir/P5_cd45_gate.png",
+       filename="plot.dir/P5_cd45_gate.png",
        height=2.75, width=2.75, dpi=300)
 
 cd45.p
@@ -2015,7 +2007,7 @@ single.p <- ggcyto(P5.cd45[1], aes(x=`FSC-H`, y=`FSC-W`)) +
   geom_gate(singlet.gate)
 
 ggsave(single.p,
-       filename="~/Dropbox/Noise_FACS/Replication_cohorts/Milieu_Interieur/plot.dir/P5_singlet_gate.png",
+       filename="plot.dir/P5_singlet_gate.png",
        height=2.75, width=2.75, dpi=300)
 
 single.p
@@ -2046,7 +2038,7 @@ p.singlet <- ggcyto(P5.singlet[1], aes(x=`SSC-H`, y=`SSC-A`)) +
   geom_gate(ssc.gate)
 
 ggsave(p.singlet,
-       filename="~/Dropbox/Noise_FACS/Replication_cohorts/Milieu_Interieur/plot.dir/P5_side_single.png",
+       filename="plot.dir/P5_side_single.png",
        height=2.75, width=2.75, dpi=300)
 
 p.singlet
@@ -2132,7 +2124,7 @@ p.bcell <- ggcyto(P5.singlet[1], aes(x=`R1-A`, y=`B3-A`)) +
   geom_gate(notcd19.gate)
 
 ggsave(p.bcell,
-       filename="~/Dropbox/Noise_FACS/Replication_cohorts/Milieu_Interieur/plot.dir/P5_bcell_gate.png",
+       filename="plot.dir/P5_bcell_gate.png",
        height=2.75, width=2.75, dpi=300)
 
 p.bcell
@@ -2265,7 +2257,7 @@ p.cd3 <- ggcyto(P5.singlet[1], aes(x=`V1-A`, y=`B2-A`)) +
   geom_gate(notcd3.gate)
 
 ggsave(p.cd3,
-       filename="~/Dropbox/Noise_FACS/Replication_cohorts/Milieu_Interieur/plot.dir/P5_CD3_gate.png",
+       filename="plot.dir/P5_CD3_gate.png",
        height=2.75, width=2.75, dpi=300)
 
 p.cd3
@@ -2411,7 +2403,7 @@ abt.p <- ggcyto(P5.CD3.gs[3], aes(x=`R2-A`, y=`B4-A`), subset="root") +
   geom_gate(DP.gate)
 
 ggsave(abt.p,
-       filename="~/Dropbox/Noise_FACS/Replication_cohorts/Milieu_Interieur/plot.dir/P5_abTgate.png",
+       filename="plot.dir/P5_abTgate.png",
        height=2.75, width=2.75, dpi=300)
 
 abt.p
@@ -2458,7 +2450,7 @@ nk.p  <- ggcyto(P5.notCD3.gs[1], aes(x=`V2-A`, y=`B1-A`), subset="root") +
   geom_gate(notnkcell.gate)
 
 ggsave(nk.p,
-       filename="~/Dropbox/Noise_FACS/Replication_cohorts/Milieu_Interieur/plot.dir/P5_nk_gate.png",
+       filename="plot.dir/P5_nk_gate.png",
        height=2.75, width=2.75, dpi=300)
 
 nk.p
@@ -2609,7 +2601,7 @@ nk.p <- ggcyto(P5.nkcell.flow[2], aes(x=`B3-A`, y=`B1-A`), subset="root") +
   NULL
 
 ggsave(nk.p,
-       filename="~/Dropbox/Noise_FACS/Replication_cohorts/Milieu_Interieur/plot.dir/P5_NKcell_gate.png",
+       filename="plot.dir/P5_NKcell_gate.png",
        height=2.75, width=2.75, dpi=300)
 
 nk.p
@@ -2712,7 +2704,7 @@ gran.p <- ggcyto(P5.notnk.gs[2], aes(x=`SSC-A`, y=`B3-A`), subset="root") +
   geom_gate(gran.gate)
 
 ggsave(gran.p,
-       filename="~/Dropbox/Noise_FACS/Replication_cohorts/Milieu_Interieur/plot.dir/P5_gran_gate.png",
+       filename="plot.dir/P5_gran_gate.png",
        height=2.75, width=2.75, dpi=300)
 
 gran.p
@@ -2837,7 +2829,7 @@ monp.p <- ggcyto(P5.mono.gs[4], aes(x=`V2-A`, y=`B3-A`), subset="root") +
   geom_gate(nonclassic.gate)
 
 ggsave(monp.p,
-       filename="~/Dropbox/Noise_FACS/Replication_cohorts/Milieu_Interieur/plot.dir/P5_mono_gate.png",
+       filename="plot.dir/P5_mono_gate.png",
        height=2.75, width=2.75, dpi=300)
 
 monp.p
@@ -2871,7 +2863,7 @@ neut.p <- ggcyto(P5.granulo.gs[4], aes(x=`FSC-A`, y=`B3-A`), subset="root") +
   geom_gate(neutrophil.gate)
 
 ggsave(neut.p,
-       filename="~/Dropbox/Noise_FACS/Replication_cohorts/Milieu_Interieur/plot.dir/P5_neut_gate.png",
+       filename="plot.dir/P5_neut_gate.png",
        height=2.75, width=2.75, dpi=300)
 
 neut.p
@@ -2890,7 +2882,7 @@ flowViz.par.set(list("panel.background"=list("col"='white'),
                      "strip.shingle"=list("col"='black')),
                 reset=FALSE)
 
-png("~/Dropbox/Noise_FACS/Replication_cohorts/Milieu_Interieur/plot.dir/CD16-Neutrophils-density.png",
+png("plot.dir/CD16-Neutrophils-density.png",
     height=3.75, width=3.75, units="in", res=300)
 densityplot(x=~`B3-A`,
             data=getData(P5.granulo.gs, "/Neutrophil"),
@@ -2919,14 +2911,11 @@ densityplot(x=~`V1-A`,
 ## Panel 7
 
 ```{r}
-source("~/Dropbox/R_sessions/GGMike/theme_mike.R")
-
 ## MI flow cytometry processing
 ############################
 ### Panel 7 - PMN subsets ##
 ############################
-print("Panel 7A")
-path.to.files <- "~/Dropbox/Noise_FACS/Replication_cohorts/Milieu_Interieur/fcs_files/"
+print("Panel 7")
 
 P7.flow.data <- read.flowSet(path=path.to.files,
                              transformation=FALSE, pattern="P07")
@@ -3008,7 +2997,7 @@ single.p <- ggcyto(P7.fs_filt[1], aes(x=`FSC-H`, y=`FSC-W`)) +
   geom_gate(singlet.gate)
 
 ggsave(single.p,
-       filename="~/Dropbox/Noise_FACS/Replication_cohorts/Milieu_Interieur/plot.dir/P7_singlet_gate.png",
+       filename="plot.dir/P7_singlet_gate.png",
        height=2.75, width=2.75, dpi=300)
 
 single.p
@@ -3038,7 +3027,7 @@ ssc.p <- ggcyto(P7.singlet[1], aes(x=`SSC-H`, y=`SSC-A`)) +
   geom_gate(ssc.gate)
 
 ggsave(ssc.p,
-       filename="~/Dropbox/Noise_FACS/Replication_cohorts/Milieu_Interieur/plot.dir/P7_SSC_gate.png",
+       filename="plot.dir/P7_SSC_gate.png",
        height=2.75, width=2.75, dpi=300)
 
 ssc.p
@@ -3135,7 +3124,7 @@ cd16.p <- ggcyto(P7.gs[2], aes(y=`B3-A`, x=`FSC-A`), subset="root") +
   geom_gate(notcd16.gate)
 
 ggsave(cd16.p,
-       filename="~/Dropbox/Noise_FACS/Replication_cohorts/Milieu_Interieur/plot.dir/P7_CD16_gate.png",
+       filename="plot.dir/P7_CD16_gate.png",
        height=2.75, width=2.75, dpi=300)
 
 cd16.p
@@ -3304,7 +3293,7 @@ p.neut <- ggcyto(P7.cd16.gs[1], aes(y=`B3-A`, x=`B2-A`), subset="root") +
   geom_gate(neut.gate)
 
 ggsave(p.neut,
-       filename="~/Dropbox/Noise_FACS/Replication_cohorts/Milieu_Interieur/plot.dir/P7_neutrophil_gate.png",
+       filename="plot.dir/P7_neutrophil_gate.png",
        height=2.75, width=2.75, dpi=300)
 
 p.neut
@@ -3324,7 +3313,7 @@ flowViz.par.set(list("panel.background"=list("col"='white'),
                      "strip.shingle"=list("col"='black')),
                 reset=FALSE)
 
-png("~/Dropbox/Noise_FACS/Replication_cohorts/Milieu_Interieur/plot.dir/CD32-Neutrophils-density.png",
+png("plot.dir/CD32-Neutrophils-density.png",
     height=3.75, width=3.75, units="in", res=300)
 densityplot(x=~`B4-A`,
             data=getData(P7.cd16.gs, "/Neutrophil"),
@@ -3446,7 +3435,7 @@ cd125.p <- ggcyto(P7.notcd16.gs[1], aes(y=`B4-A`, x=`B2-A`), subset="root") +
   geom_gate(cd125.gate)
 
 ggsave(cd125.p,
-       filename="~/Dropbox/Noise_FACS/Replication_cohorts/Milieu_Interieur/plot.dir/P7_CD125_Gate.png",
+       filename="plot.dir/P7_CD125_Gate.png",
        height=2.75, width=2.75, dpi=300)
 
 cd125.p
@@ -3474,7 +3463,7 @@ p.eosin <- ggcyto(P7.notcd16.gs[1], aes(y=`SSC-A`, x=`FSC-A`), subset="CD125") +
   geom_gate(eosin.gate)
 
 ggsave(p.eosin,
-       filename="~/Dropbox/Noise_FACS/Replication_cohorts/Milieu_Interieur/plot.dir/P7_Eosin_gate.png",
+       filename="plot.dir/P7_Eosin_gate.png",
        height=2.75, width=2.75, dpi=300)
 
 p.eosin
@@ -3509,7 +3498,7 @@ p.baso <- ggcyto(P7.notcd16.gs[1], aes(y=`R1-A`, x=`B1-A`), subset="root") +
   geom_gate(fcer.gate)
 
 ggsave(p.baso,
-       filename="~/Dropbox/Noise_FACS/Replication_cohorts/Milieu_Interieur/plot.dir/P7_baso_gate.png",
+       filename="plot.dir/P7_baso_gate.png",
        height=2.75, width=2.75, dpi=300)
 
 p.baso
@@ -3630,7 +3619,7 @@ p.bas.true <- ggcyto(P7.baso.gs[1], aes(y=`B2-A`, x=`B1-A`), subset="root") +
   geom_gate(baso.gate)
 
 ggsave(p.bas.true,
-       filename="~/Dropbox/Noise_FACS/Replication_cohorts/Milieu_Interieur/plot.dir/P7_TrueBaso.png",
+       filename="plot.dir/P7_TrueBaso.png",
        height=2.75, width=2.75, dpi=300)
 
 p.bas.true
@@ -3657,14 +3646,12 @@ sink(file=NULL)
 ## Panel 8
 
 ```{r}
-source("~/Dropbox/R_sessions/GGMike/theme_mike.R")
 ## MI flow cytometry processing
 ######################################
 ### Panel 8 - dendritic cell  panel ##
 ######################################
-print("Panel 8A")
+print("Panel 8")
 
-path.to.files <- "~/Dropbox/Noise_FACS/Replication_cohorts/Milieu_Interieur/fcs_files/"
 P8.flow.data <- read.flowSet(path=path.to.files,
                              transformation=FALSE, pattern="P08")
 sample.ids <- unlist(lapply(strsplit(x=sampleNames(P8.flow.data), split="-", fixed=TRUE),
@@ -3742,7 +3729,7 @@ p.singlet <- ggcyto(P8.singlet[1], aes(x=`FSC-H`, y=`FSC-W`)) +
   geom_gate(singlet.gates)
 
 ggsave(p.singlet,
-       filename="~/Dropbox/Noise_FACS/Replication_cohorts/Milieu_Interieur/plot.dir/P8_singlet_gate.png",
+       filename="plot.dir/P8_singlet_gate.png",
        height=2.75, width=2.75, dpi=300)
 
 p.singlet
@@ -3772,7 +3759,7 @@ ssc.p <- ggcyto(P8.singlet[1], aes(x=`SSC-H`, y=`SSC-A`)) +
   geom_gate(ssc.gate)
 
 ggsave(ssc.p,
-       filename="~/Dropbox/Noise_FACS/Replication_cohorts/Milieu_Interieur/plot.dir/P8_SSC_gate.png",
+       filename="plot.dir/P8_SSC_gate.png",
        height=2.75, width=2.75, dpi=300)
 
 ssc.p
@@ -3831,7 +3818,7 @@ p.live <- ggcyto(P8.gs[1], aes(x=`V2-A`), subset="root") +
   geom_gate(live.gate)
 
 ggsave(p.live,
-       filename="~/Dropbox/Noise_FACS/Replication_cohorts/Milieu_Interieur/plot.dir/P8_live_gate.png",
+       filename="plot.dir/P8_live_gate.png",
        height=2.75, width=2.75, dpi=300)
 
 p.live
@@ -3864,7 +3851,7 @@ p.hla <- ggcyto(P8.gs[1], aes(x=`V1-A`, y=`B3-A`), subset="Live") +
   geom_gate(dc.gate)
 
 ggsave(p.hla,
-       filename="~/Dropbox/Noise_FACS/Replication_cohorts/Milieu_Interieur/plot.dir/P8_HLA_gate.png",
+       filename="plot.dir/P8_HLA_gate.png",
        height=2.75, width=2.75, dpi=300)
 
 p.hla
@@ -4002,7 +3989,7 @@ p.pdc <- ggcyto(P8.dc.gs[1], aes(x=`B2-A`, y=`R1-A`), subset="root") +
   geom_gate(notpdc.gate)
 
 ggsave(p.pdc,
-       filename="~/Dropbox/Noise_FACS/Replication_cohorts/Milieu_Interieur/plot.dir/P8_PDC_gate.png",
+       filename="plot.dir/P8_PDC_gate.png",
        height=2.75, width=2.75, dpi=300)
 
 p.pdc
@@ -4115,7 +4102,7 @@ cdc.p <- ggcyto(P8.cdc.gs[1], aes(x=`B1-A`, y=`R2-A`), subset="root") +
   geom_gate(cdc1.gate)
 
 ggsave(cdc.p,
-       filename="~/Dropbox/Noise_FACS/Replication_cohorts/Milieu_Interieur/plot.dir/P8_cDC_gate.png",
+       filename="plot.dir/P8_cDC_gate.png",
        height=2.75, width=2.75, dpi=300)
 
 cdc.p
@@ -4143,10 +4130,7 @@ sink(file=NULL)
 ## Panel 9
 
 ```{r}
-source("~/Dropbox/R_sessions/GGMike/theme_mike.R")
-
-print("Panel 9A")
-path.to.files <- "~/Dropbox/Noise_FACS/Replication_cohorts/Milieu_Interieur/fcs_files/"
+print("Panel 9")
 P9.flow.data <- read.flowSet(path=path.to.files,
                              transformation=FALSE, pattern="P09")
 sample.ids <- unlist(lapply(strsplit(x=sampleNames(P9.flow.data), split="-", fixed=TRUE),
@@ -4270,7 +4254,7 @@ gdt.p <- ggcyto(P9.fs_filt[1], aes(x=`B2-A`, y=`SSC-A`)) +
   geom_gate(gdtpos.gate)
 
 ggsave(gdt.p,
-       filename="~/Dropbox/Noise_FACS/Replication_cohorts/Milieu_Interieur/plot.dir/P9_gdT_gate.png",
+       filename="plot.dir/P9_gdT_gate.png",
        height=2.75, width=2.75, dpi=300)
 
 gdt.p
@@ -4304,7 +4288,7 @@ singlet.p <- ggcyto(P9.gs[1], aes(x=`FSC-H`, y=`FSC-W`), subset="gdTneg") +
   geom_gate(singlet.gate)
   
 ggsave(singlet.p,
-       filename="~/Dropbox/Noise_FACS/Replication_cohorts/Milieu_Interieur/plot.dir/P9_singlet_gate.png",
+       filename="plot.dir/P9_singlet_gate.png",
        height=2.75, width=2.75, dpi=300)
 
 singlet.p
@@ -4338,7 +4322,7 @@ p.ssc <- ggcyto(P9.gs[1], aes(x=`SSC-H`, y=`SSC-A`), subset="/gdT/Singlet") +
   geom_gate(ssc.ellipsoid)
 
 ggsave(p.ssc,
-       filename="~/Dropbox/Noise_FACS/Replication_cohorts/Milieu_Interieur/plot.dir/P9_SSC_gate.png",
+       filename="plot.dir/P9_SSC_gate.png",
        height=2.75, width=2.75, dpi=300)
 
 p.ssc
@@ -4491,7 +4475,7 @@ tcell.p <- ggcyto(P9.abtcell.gs[1], aes(x=`R2-A`, y=`B4-A`), subset="root") +
   geom_gate(DP.gate)
 
 ggsave(tcell.p,
-     filename="~/Dropbox/Noise_FACS/Replication_cohorts/Milieu_Interieur/plot.dir/P9_Tcell_gate.png",
+     filename="plot.dir/P9_Tcell_gate.png",
      height=2.75, width=2.75, dpi=300)
 
 tcell.p
@@ -4668,7 +4652,7 @@ th1.p <- ggcyto(P9.cd8thcell.gs[1], aes(x=`R1-A`, y=`B3-A`), subset="root") +
   geom_gate(cd8ccr6.gate)
 
 ggsave(th1.p ,
-       filename="~/Dropbox/Noise_FACS/Replication_cohorts/Milieu_Interieur/plot.dir/P9_Th1_gate.png",
+       filename="plot.dir/P9_Th1_gate.png",
        height=2.75, width=2.75, dpi=300)
 
 th1.p 
@@ -4843,7 +4827,7 @@ tfh.p <- ggcyto(P9.ccr6neg.gs[1], aes(x=`B1-A`, y=`V2-A`), subset="root") +
   geom_gate(th2.gate)
 
 ggsave(tfh.p,
-       filename="~/Dropbox/Noise_FACS/Replication_cohorts/Milieu_Interieur/plot.dir/P9_Th2_gate.png",
+       filename="plot.dir/P9_Th2_gate.png",
        height=2.75, width=2.75, dpi=300)
 
 tfh.p
