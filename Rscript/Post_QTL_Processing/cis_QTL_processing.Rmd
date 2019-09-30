@@ -1,0 +1,494 @@
+---
+title: "cis QTL mapping results: LIMIX"
+output: html_notebook
+editor_options: 
+  chunk_output_type: inline
+---
+
+__NB__: This notebook is not designed to be run as is - rather it is an example of the analytical workflow 
+followed.
+
+```{r}
+library(ggplot2)
+library(scales)
+library(biomaRt)
+library(lettercase)
+library(reshape2)
+library(stringi)
+source("~/Dropbox/R_sessions/GGMike/theme_mike.R")
+```
+
+```{r}
+# insert the path to the directory containing the Plink clumping results - these are the results from the 
+# TwinsUK cohort
+cis.clump.dir <- "TwinsUK/limix_clump/"
+
+cis.clump.files <- list.files(cis.clump.dir)
+cis.clump.list <- list()
+
+for(x in seq_along(cis.clump.files)){
+  i.file <- cis.clump.files[x]
+  cis.res <- read.table(paste0(cis.clump.dir, i.file), header=TRUE, stringsAsFactors=FALSE)
+  sum.stat <- unlist(lapply(strsplit(i.file, split="-", fixed=TRUE),
+                            FUN=function(X) paste0(X[1])))
+  protein <- unlist(lapply(strsplit(unlist(lapply(strsplit(i.file, split="-", fixed=TRUE),
+                                                  FUN=function(X) paste0(X[2]))),
+                                    split="_", fixed=TRUE),
+                           FUN=function(Q) paste0(Q[1])))
+  celltype <- unlist(lapply(strsplit(unlist(lapply(strsplit(i.file, split="-", fixed=TRUE),
+                                                  FUN=function(X) paste0(X[2]))),
+                                    split="_", fixed=TRUE),
+                           FUN=function(Q) paste0(Q[2])))
+  panel <- unlist(lapply(strsplit(unlist(lapply(strsplit(i.file, split="-", fixed=TRUE),
+                                                  FUN=function(X) paste0(X[2]))),
+                                    split="_", fixed=TRUE),
+                           FUN=function(Q) paste0(Q[3])))
+  panel <- gsub(panel, pattern="-chr[0-9]+\\.clumped", replacement="")
+  
+  cis.res$Protein <- protein
+  cis.res$CellType <- celltype
+  cis.res$Measure <- sum.stat
+  cis.res$Panel <- panel
+  
+  cis.clump.list[[i.file]] <- cis.res
+}
+
+all.cis <- do.call(rbind.data.frame,
+                   cis.clump.list)
+rownames(all.cis) <- NULL
+all.cis$FullTrait <- paste(paste(all.cis$Measure, all.cis$Protein, sep="-"),
+                           all.cis$CellType, all.cis$Panel, sep="_")
+all.cis$Padjust <- p.adjust(all.cis$P, method="fdr")
+all.cis$SigTier <- "Sub"
+all.cis$SigTier[all.cis$Padjust <= 0.05] <- "Top"
+
+all.cis$Measure[all.cis$Measure %in% c("Noise")] <- "Variability"
+all.cis$Cohort <- "TwinsUK"
+```
+
+
+```{r}
+# this is the path to the Milieu Interier plink clumping results
+mi.cis.clump.dir <- "Mileu_interieur/limix_clump/"
+mi.cis.clump.files <- list.files(mi.cis.clump.dir)
+mi.cis.clump.list <- list()
+
+for(x in seq_along(mi.cis.clump.files)){
+  i.file <- mi.cis.clump.files[x]
+  mi.cis.res <- read.table(paste0(mi.cis.clump.dir, i.file), header=TRUE, stringsAsFactors=FALSE)
+  sum.stat <- unlist(lapply(strsplit(i.file, split="-", fixed=TRUE),
+                            FUN=function(X) paste0(X[1])))
+  protein <- unlist(lapply(strsplit(unlist(lapply(strsplit(i.file, split="-", fixed=TRUE),
+                                                  FUN=function(X) paste0(X[2]))),
+                                    split="_", fixed=TRUE),
+                           FUN=function(Q) paste0(Q[1])))
+  celltype <- unlist(lapply(strsplit(unlist(lapply(strsplit(i.file, split="-", fixed=TRUE),
+                                                  FUN=function(X) paste0(X[2]))),
+                                    split="_", fixed=TRUE),
+                           FUN=function(Q) paste0(Q[2])))
+  panel <- unlist(lapply(strsplit(unlist(lapply(strsplit(i.file, split="-", fixed=TRUE),
+                                                  FUN=function(X) paste0(X[2]))),
+                                    split="_", fixed=TRUE),
+                           FUN=function(Q) paste0(Q[3])))
+  panel <- gsub(panel, pattern="-chr[0-9]+\\.clumped", replacement="")
+  
+  mi.cis.res$Protein <- protein
+  mi.cis.res$CellType <- celltype
+  mi.cis.res$Measure <- sum.stat
+  mi.cis.res$Panel <- panel
+  
+  mi.cis.clump.list[[i.file]] <- mi.cis.res
+}
+
+all.mi.cis <- do.call(rbind.data.frame,
+                   mi.cis.clump.list)
+rownames(all.mi.cis) <- NULL
+all.mi.cis$FullTrait <- paste(paste(all.mi.cis$Measure, all.mi.cis$Protein, sep="-"),
+                           all.mi.cis$CellType, all.mi.cis$Panel, sep="_")
+
+all.mi.cis$Padjust <- p.adjust(all.mi.cis$P, method="fdr")
+all.mi.cis$SigTier <- "Sub"
+all.mi.cis$SigTier[all.mi.cis$Padjust <= 0.05] <- "Top"
+
+all.mi.cis$Measure[all.mi.cis$Measure %in% c("Noise")] <- "Variability"
+all.mi.cis$Cohort <- "Milieu Intérieur"
+```
+
+Merge the cis-QTL results from MI and TwinsUK
+
+```{r}
+all.cis.results <- do.call(rbind.data.frame,
+                           list("Twins"=all.cis,
+                                "MI"=all.mi.cis))
+all.cis.results$QTL <- "Cis"
+
+# remove duplicate entries, i.e. the same QTL for the same trait
+all.cis.results <- all.cis.results[!duplicated(all.cis.results[, c("SNP", "FullTrait")]), ]
+```
+
+
+```{r}
+cis.summary.table <- as.data.frame(table(all.cis.results$Protein, all.cis.results$Measure))
+colnames(cis.summary.table) <- c("Protein", "Measure", "cis.NClumps")
+cis.summary.table$CisQTL <- cis.summary.table$cis.NClumps
+```
+
+I've collated the cis-qtls, now I need to get the trans-qtls and calculate a ratio of cis:trans for each trait, 
+protein, celltype, etc
+
+```{r}
+# this should be the path to a file that contains all of the trans-QTL results
+trans.qtl <- read.table("varQTLs-clump_results.txt",
+                        sep="\t", header=TRUE, stringsAsFactors=FALSE)
+trans.qtl$QTL <- "Trans"
+```
+
+
+```{r}
+trans.summary.table <- as.data.frame(table(trans.qtl$Protein[trans.qtl$SigTier %in% c("Top", "Second")],
+                                           trans.qtl$Measure[trans.qtl$SigTier %in% c("Top", "Second")]))
+colnames(trans.summary.table) <- c("Protein", "Measure", "trans.NClumps")
+trans.summary.table$TransQTL <- trans.summary.table$trans.NClumps
+```
+
+
+
+```{r}
+# how should I handle infinite values create first by having a 0 denominator,
+# and secondly by visualising on a log scale for ratios that have a 0 numerator?
+# I can use a pseudocount to get around both if I use a log ratio, i.e.
+# log10(cis + 1) - log10(trans + 1)
+qtl.merge <- merge(trans.summary.table, cis.summary.table, by=c('Protein', 'Measure'), all=TRUE)
+qtl.merge$TransQTL[is.na(qtl.merge$TransQTL)] <- 0
+qtl.merge$CisQTL[is.na(qtl.merge$CisQTL)] <- 0
+qtl.merge$Proportion <- qtl.merge$CisQTL/(qtl.merge$TransQTL + qtl.merge$CisQTL)
+qtl.merge$Ratio <- qtl.merge$CisQTL/qtl.merge$TransQTL
+qtl.merge$Ratio[is.na(qtl.merge$Ratio) & qtl.merge$CisQTL > 0] <- qtl.merge$CisQTL[is.na(qtl.merge$Ratio) & qtl.merge$CisQTL > 0]
+qtl.merge$Ratio[is.infinite(qtl.merge$Ratio) & qtl.merge$CisQTL > 0] <- qtl.merge$CisQTL[is.infinite(qtl.merge$Ratio) & qtl.merge$CisQTL > 0]
+qtl.merge$Ratio[is.infinite(qtl.merge$Ratio) & qtl.merge$CisQTL == 0] <- 0
+qtl.merge$logRatio <- log(qtl.merge$CisQTL + 1) - log(qtl.merge$TransQTL + 1)
+# set to Na if no trans and no cis
+qtl.merge$logRatio[qtl.merge$CisQTL == 0 & qtl.merge$TransQTL] <- NA
+```
+
+I've set this to the proportion of all identified QTLs that are _cis_ QTLs. If we use a strict ratio, then this varies from 0 to infinity, 
+which makes it tricky to visualise - I could try it on a log scale?
+
+```{r}
+cistrans.p <- ggplot(qtl.merge, aes(x=Ratio, fill=Measure)) +
+  geom_density(alpha=0.6) +
+  theme_mike() +
+  labs(x="Cis:Trans Ratio", y="Density") +
+  #scale_x_log10() +
+  scale_fill_manual(values=c("blue", "orange"))
+
+# this should be the path to wherever you want to save plots to
+ggsave(cistrans.p,
+       filename="plot.dir/All-CisTrans_Ratio.pdf",
+       height=2.75, width=4.45)
+
+cistrans.p
+```
+
+That shows the full range, but now it's hard to see the differences between mean and variability. What about the log ratio?
+
+```{r}
+qtl.merge <- qtl.merge[!is.na(qtl.merge$logRatio), ]
+
+cistrans.p <- ggplot(qtl.merge, aes(x=logRatio, fill=Measure)) +
+  geom_density(alpha=0.6) +
+  theme_mike() +
+  labs(x="log Cis:Trans Ratio", y="Density") +
+  #scale_x_log10() +
+  scale_fill_manual(values=c("blue", "orange"))
+
+ggsave(cistrans.p,
+       filename="plot.dir/All-CisTrans_logratio.pdf",
+       height=2.75, width=4.45)
+
+cistrans.p
+```
+
+I can see the whole range of values now, but it is harder to see the difference between mean and variability. There is definitely a skew 
+though!
+
+I also need to create some summary plots of _cis_ and _trans_ QTLs across both cohorts.
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+common.columns <- intersect(colnames(all.cis.results), colnames(trans.qtl))
+all.qtl.res <- do.call(rbind.data.frame,
+                       list("cis"=all.cis.results[, common.columns],
+                            "trans"=trans.qtl[, common.columns]))
+all.qtl.res$Measure[all.qtl.res$Measure %in% c("Noise")] <- "Variability"
+```
+
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE, fig.height=3.95, fig.width=3.95}
+partition.cols <- c("#AC00E3", "#008B19")
+names(partition.cols) <- c("Cis", "Trans")
+
+res.table <- as.data.frame(table(all.qtl.res[all.qtl.res$SigTier %in% c("Top", "Second"), ]$QTL,
+                                 all.qtl.res[all.qtl.res$SigTier %in% c("Top", "Second"), ]$FullTrait))
+colnames(res.table) <- c("QTL", "FullTrait", "NQTL")
+res.table$FullTrait <- as.character(res.table$FullTrait)
+res.table$Measure <- unlist(lapply(strsplit(res.table$FullTrait, split="-", fixed=TRUE),
+                                   FUN=function(X) paste0(X[1])))
+res.table$Measure[res.table$Measure %in% c("Noise")] <- "Variability"
+
+res.table$Protein <- gsub(unlist(lapply(strsplit(res.table$FullTrait, split="_", fixed=TRUE),
+                                        FUN=function(X) paste0(X[1]))),
+                          pattern="(Mean|Variability)-", replacement="")
+
+res.table$CellType <- unlist(lapply(strsplit(res.table$FullTrait, split="_", fixed=TRUE),
+                                    FUN=function(X) paste0(X[2])))
+```
+
+These need to be scale by the number of traits for each, i.e. there are more mean traits than variability.
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE, fig.height=3.95, fig.width=4.95}
+mean.res.table <- as.data.frame(xtabs(~ FullTrait + QTL, data=all.qtl.res[all.qtl.res$SigTier %in% c("Top", "Second") &
+                                                                            all.qtl.res$Measure %in% c("Mean"), ]))
+colnames(mean.res.table) <- c("FullTrait", "QTL", "NQTL")
+
+mean.sum.table <- data.frame("QTL"=names(by(data=mean.res.table$NQTL, INDICES=mean.res.table$QTL, FUN=sum)),
+                             "NQTL"=as.numeric(by(data=mean.res.table$NQTL, INDICES=mean.res.table$QTL, FUN=sum)))
+mean.sum.table$Measure <- "Mean"
+
+var.res.table <- as.data.frame(xtabs(~ FullTrait + QTL, data=all.qtl.res[all.qtl.res$SigTier %in% c("Top", "Second") &
+                                                                            all.qtl.res$Measure %in% c("Variability"), ]))
+  
+colnames(var.res.table) <- c("FullTrait", "QTL", "NQTL")
+
+var.sum.table <- data.frame("QTL"=names(by(data=var.res.table$NQTL, INDICES=var.res.table$QTL, FUN=sum)),
+                             "NQTL"=as.numeric(by(data=var.res.table$NQTL, INDICES=var.res.table$QTL, FUN=sum)))
+var.sum.table$Measure <- "Variability"
+
+cross.res.table <- do.call(rbind.data.frame,
+                           list("mean"=mean.sum.table,
+                                "var"=var.sum.table))
+
+mean.nqtls.p <- ggplot(cross.res.table,
+       aes(x=Measure,
+           y=NQTL)) +
+  geom_bar(stat='identity', fill='grey80', colour='black') +
+  theme_mike() +
+  facet_wrap(~QTL, scales="free") +
+  labs(y="# QTLs", x="Measure") +
+  theme(strip.background=element_rect(fill='white', colour='white')) +
+  NULL
+
+
+ggsave(mean.nqtls.p,
+       filename="plot.dir/NQTLs_bar.png",
+       height=3.95, width=4.95)
+
+ggsave(mean.nqtls.p,
+       filename="plot.dir/NQTLs_bar.pdf",
+       height=3.95, width=4.95)
+
+mean.nqtls.p
+```
+
+Show this same plot for the matching proteins with both mean and variability QTLs.
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE, fig.height=3.95, fig.width=4.95}
+var.traits <- gsub(unique(all.qtl.res$FullTrait[all.qtl.res$Measure %in% c("Variability") & all.qtl.res$SigTier %in% c("Top", "Second")]),
+                   pattern="Noise-", replacement="")
+mean.traits <- gsub(unique(all.qtl.res$FullTrait[all.qtl.res$Measure %in% c("Mean") & all.qtl.res$SigTier %in% c("Top", "Second")]),
+                    pattern="Mean-", replacement="")
+
+match.traits <- intersect(var.traits, mean.traits)
+
+mean.res.table <- as.data.frame(xtabs(~ FullTrait + QTL, data=all.qtl.res[all.qtl.res$SigTier %in% c("Top", "Second") &
+                                                                            all.qtl.res$Measure %in% c("Mean") &
+                                                                            gsub(all.qtl.res$FullTrait, pattern="Mean-", replacement="") %in% match.traits, ]))
+colnames(mean.res.table) <- c("FullTrait", "QTL", "NQTL")
+
+mean.sum.table <- data.frame("QTL"=names(by(data=mean.res.table$NQTL, INDICES=mean.res.table$QTL, FUN=sum)),
+                             "NQTL"=as.numeric(by(data=mean.res.table$NQTL, INDICES=mean.res.table$QTL, FUN=sum)))
+mean.sum.table$Measure <- "Mean"
+
+var.res.table <- as.data.frame(xtabs(~ FullTrait + QTL, data=all.qtl.res[all.qtl.res$SigTier %in% c("Top", "Second") &
+                                                                            all.qtl.res$Measure %in% c("Variability") &
+                                                                            gsub(all.qtl.res$FullTrait, pattern="Noise-", replacement="") %in% match.traits, ]))
+  
+colnames(var.res.table) <- c("FullTrait", "QTL", "NQTL")
+
+var.sum.table <- data.frame("QTL"=names(by(data=var.res.table$NQTL, INDICES=var.res.table$QTL, FUN=sum)),
+                             "NQTL"=as.numeric(by(data=var.res.table$NQTL, INDICES=var.res.table$QTL, FUN=sum)))
+var.sum.table$Measure <- "Variability"
+
+cross.res.table <- do.call(rbind.data.frame,
+                           list("mean"=mean.sum.table,
+                                "var"=var.sum.table))
+
+match.nqtls.p <- ggplot(cross.res.table,
+       aes(x=Measure,
+           y=NQTL)) +
+  geom_bar(stat='identity', fill='grey80', colour='black') +
+  theme_mike() +
+  facet_wrap(~QTL, scales="free") +
+  labs(y="# QTLs", x="Measure") +
+  theme(strip.background=element_rect(fill='white', colour='white')) +
+  NULL
+
+
+ggsave(match.nqtls.p,
+       filename="plot.dir/NQTLs_bar-matching.png",
+       height=3.95, width=4.95)
+
+ggsave(match.nqtls.p,
+       filename="plot.dir/NQTLs_bar-matching.pdf",
+       height=3.95, width=4.95)
+
+match.nqtls.p
+```
+
+Generally speaking, how are the effect sizes distributed for cis and trans effects for mean and variability?
+
+
+
+```{r}
+cis.qtl.dir <- "TwinsUK/limix_qtl/"
+cis.qtl.files <- list.files(cis.qtl.dir)
+cis.qtl.list <- list()
+cis.clump.snps <- unique(all.cis$SNP)
+
+for(x in seq_along(cis.qtl.files)){
+  i.file <- cis.qtl.files[x]
+  cis.res <- read.delim(paste0(cis.qtl.dir, i.file), header=TRUE, stringsAsFactors=FALSE)
+  sum.stat <- unlist(lapply(strsplit(i.file, split="-", fixed=TRUE),
+                            FUN=function(X) paste0(X[1])))
+  protein <- unlist(lapply(strsplit(unlist(lapply(strsplit(i.file, split="-", fixed=TRUE),
+                                                  FUN=function(X) paste0(X[2]))),
+                                    split="_", fixed=TRUE),
+                           FUN=function(Q) paste0(Q[1])))
+  celltype <- unlist(lapply(strsplit(unlist(lapply(strsplit(i.file, split="-", fixed=TRUE),
+                                                  FUN=function(X) paste0(X[2]))),
+                                    split="_", fixed=TRUE),
+                           FUN=function(Q) paste0(Q[2])))
+  panel <- unlist(lapply(strsplit(unlist(lapply(strsplit(i.file, split="-", fixed=TRUE),
+                                                  FUN=function(X) paste0(X[2]))),
+                                    split="_", fixed=TRUE),
+                           FUN=function(Q) paste0(Q[3])))
+  panel <- gsub(panel, pattern="-chr[0-9]+\\.qtled", replacement="")
+  
+  cis.res$Protein <- protein
+  cis.res$CellType <- celltype
+  cis.res$Measure <- sum.stat
+  cis.res$Panel <- panel
+  
+  cis.qtl.list[[i.file]] <- cis.res[cis.res$SNP %in% cis.clump.snps, ]
+}
+
+all.qtl.cis <- do.call(rbind.data.frame,
+                       cis.qtl.list)
+rownames(all.qtl.cis) <- NULL
+all.qtl.cis$FullTrait <- paste(paste(all.qtl.cis$Measure, all.qtl.cis$Protein, sep="-"),
+                               all.qtl.cis$CellType, all.qtl.cis$Panel, sep="_")
+
+all.qtl.cis$Measure[all.qtl.cis$Measure %in% c("Noise")] <- "Variability"
+all.qtl.cis$Cohort <- "TwinsUK"
+```
+
+
+```{r}
+mi.cis.qtl.dir <- "Mileu_interieur/limix_qtl/"
+mi.cis.qtl.files <- list.files(mi.cis.qtl.dir)
+mi.cis.qtl.list <- list()
+mi.cis.clump.snps <- unique(all.mi.cis$SNP)
+
+for(x in seq_along(mi.cis.qtl.files)){
+  i.file <- mi.cis.qtl.files[x]
+  mi.cis.res <- read.delim(paste0(mi.cis.qtl.dir, i.file), header=TRUE, stringsAsFactors=FALSE)
+  sum.stat <- unlist(lapply(strsplit(i.file, split="-", fixed=TRUE),
+                            FUN=function(X) paste0(X[1])))
+  protein <- unlist(lapply(strsplit(unlist(lapply(strsplit(i.file, split="-", fixed=TRUE),
+                                                  FUN=function(X) paste0(X[2]))),
+                                    split="_", fixed=TRUE),
+                           FUN=function(Q) paste0(Q[1])))
+  celltype <- unlist(lapply(strsplit(unlist(lapply(strsplit(i.file, split="-", fixed=TRUE),
+                                                  FUN=function(X) paste0(X[2]))),
+                                    split="_", fixed=TRUE),
+                           FUN=function(Q) paste0(Q[2])))
+  panel <- unlist(lapply(strsplit(unlist(lapply(strsplit(i.file, split="-", fixed=TRUE),
+                                                  FUN=function(X) paste0(X[2]))),
+                                    split="_", fixed=TRUE),
+                           FUN=function(Q) paste0(Q[3])))
+  panel <- gsub(panel, pattern="-chr[0-9]+\\.qtled", replacement="")
+  
+  mi.cis.res$Protein <- protein
+  mi.cis.res$CellType <- celltype
+  mi.cis.res$Measure <- sum.stat
+  mi.cis.res$Panel <- panel
+  
+  mi.cis.qtl.list[[i.file]] <- mi.cis.res[mi.cis.res$SNP %in% mi.cis.clump.snps, ]
+}
+
+all.qtl.mi.cis <- do.call(rbind.data.frame,
+                       mi.cis.qtl.list)
+rownames(all.qtl.mi.cis) <- NULL
+all.qtl.mi.cis$FullTrait <- paste(paste(all.qtl.mi.cis$Measure, all.qtl.mi.cis$Protein, sep="-"),
+                               all.qtl.mi.cis$CellType, all.qtl.mi.cis$Panel, sep="_")
+
+all.qtl.mi.cis$Measure[all.qtl.mi.cis$Measure %in% c("Noise")] <- "Variability"
+all.qtl.mi.cis$Cohort <- "Milieu Intérieur"
+```
+
+
+```{r}
+all.cis.qtl.results <- do.call(rbind.data.frame,
+                               list("Twins"=all.qtl.cis,
+                                    "MI"=all.qtl.mi.cis))
+all.cis.qtl.results$QTL <- "Cis"
+
+# remove duplicate entries
+all.cis.qtl.results <- all.cis.qtl.results[!duplicated(all.cis.qtl.results[, c("SNP", "BETA", "P", "FullTrait")]), ]
+```
+
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+# I need to extract the results fro the cis-QTL mapping and merge with the clumping results
+all.clump.qtl <- merge(all.cis.qtl.results, all.cis.results, 
+                       by=c("SNP", "Protein", "CellType", "Measure", "Panel", "FullTrait", "QTL", "CHR", "BP", "Cohort"))
+#remove duplicates
+all.clump.qtl <- all.clump.qtl[!duplicated(all.clump.qtl[, c("Padjust", "FullTrait")]), ]
+```
+
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+common.columns <- intersect(colnames(all.clump.qtl), colnames(trans.qtl))
+all.qtl.res <- do.call(rbind.data.frame,
+                       list("cis"=all.clump.qtl[, common.columns],
+                            "trans"=trans.qtl[, common.columns]))
+all.qtl.res$Measure[all.qtl.res$Measure %in% c("Noise")] <- "Variability"
+```
+
+I'll plot the distributions of effect sizes for cis and trans QTLs.
+
+```{r, fig.height=4.15, fig.width=8.25}
+qtl.beta.p <- ggplot(all.qtl.res[all.qtl.res$SigTier %in% c("Top", "Second"), ],
+       aes(x=BETA, fill=Measure)) +
+  geom_density(alpha=0.5) +
+  theme_mike() +
+  theme(strip.background=element_rect(fill='white', colour='white'),
+        strip.text=element_text(size=18),
+        legend.title=element_text(size=18),
+        legend.text=element_text(size=16)) +
+  labs(x=expression(bold(paste("Genetic effect - ", gamma))), y="Density") +
+  scale_fill_manual(values=c("blue", "orange")) +
+  facet_wrap(~QTL, scales="free") 
+
+ggsave(qtl.beta.p,
+       filename="plot.dir/Beta_distribution-ALLQTLs.pdf",
+       height=4.15, width=8.25, useDingbats=FALSE)
+
+qtl.beta.p
+```
+
+
+
+
+
+
+
