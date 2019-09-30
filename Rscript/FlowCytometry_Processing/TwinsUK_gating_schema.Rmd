@@ -23,10 +23,9 @@ library(flowViz)
 library(ggcyto)
 library(ggplot2)
 library(ggridges)
-source("~/Dropbox/R_sessions/SingleCellFunctions/single_cell_functions.R")
-source("~/Dropbox/R_sessions/GGMike/theme_mike.R")
+source("GGMike/theme_mike.R")
 
-path.to.files <- "~/Dropbox/Noise_FACS/TwinsUK/FCS_files/"
+path.to.files <- "TwinsUK/FCS_files/"
 P1.flow.data <- read.flowSet(path=path.to.files,
                              transformation=FALSE, pattern="P1")
 
@@ -126,7 +125,7 @@ p1.singlet.p <- ggcyto(P1.fs_filt[1], aes(x=`FSC-A`, y=`FSC-H`)) +
   theme(strip.text=element_blank())
 
 ggsave(p1.singlet.p,
-       filename="~/Dropbox/Noise_FACS/TwinsUK/plot.dir/P1_singlet_gate.png",
+       filename="plot.dir/P1_singlet_gate.png",
        height=2.75, width=2.75, dpi=300)
 
 p1.singlet.p
@@ -153,7 +152,7 @@ viable.p <- ggcyto(P1.singlet[1], aes(x=`V545-A`, y=`SSC-A`)) +
   theme(strip.text=element_blank())
 
 ggsave(viable.p,
-       filename="~/Dropbox/Noise_FACS/TwinsUK/plot.dir/P1_live_gate.png",
+       filename="plot.dir/P1_live_gate.png",
        height=2.75, width=2.75, dpi=300)
 
 viable.p
@@ -214,7 +213,7 @@ cd3.p <- ggcyto(P1.gs[1], aes(x=`SSC-A`, y=`R780-A`), subset="root") +
   lims(y=c(0, 12))
 
 ggsave(cd3.p,
-       filename="~/Dropbox/Noise_FACS/TwinsUK/plot.dir/P1_CD3_gate.png",
+       filename="plot.dir/P1_CD3_gate.png",
        height=2.75, width=2.75, dpi=300)
 
 cd3.p
@@ -295,7 +294,7 @@ cd4.p <- ggcyto(P1.gs[1], aes(x=`V605-A`, y=`V585-A`), subset="/CD3") +
   geom_gate(DP.gate)
 
 ggsave(cd4.p,
-       filename="~/Dropbox/Noise_FACS/TwinsUK/plot.dir/P1_Tcell_gate_plot.png",
+       filename="plot.dir/P1_Tcell_gate_plot.png",
        height=2.75, width=2.75, dpi=300)
 
 cd4.p
@@ -344,7 +343,7 @@ ccr7.gates.p <- ggcyto(P1.gs[1], aes(x=`V605-A`, y=`R710-A`), subset="/CD3/CD4")
   geom_gate(ccr7.neg.gate)
 
 ggsave(ccr7.gates.p,
-       filename="~/Dropbox/Noise_FACS/TwinsUK/plot.dir/P1_CCR7-CD4_gate.png",
+       filename="plot.dir/P1_CCR7-CD4_gate.png",
        height=2.75, width=2.75, dpi=300)
 
 ccr7.gates.p
@@ -363,7 +362,7 @@ ccr7.gates.p <- ggcyto(P1.gs[1], aes(x=`V585-A`, y=`R710-A`), subset="/CD3/CD8")
   geom_gate(ccr7.neg.gate)
 
 ggsave(ccr7.gates.p,
-       filename="~/Dropbox/Noise_FACS/TwinsUK/plot.dir/P1_CCR7-CD8_gate.png",
+       filename="plot.dir/P1_CCR7-CD8_gate.png",
        height=2.75, width=2.75, dpi=300)
 
 ccr7.gates.p
@@ -402,7 +401,7 @@ em.gates.p <- ggcyto(P1.gs[1], aes(x=`G560-A`, y=`R660-A`), subset="/CD3/CD4/CCR
   geom_gate(EM.gate)
 
 ggsave(em.gates.p,
-       filename="~/Dropbox/Noise_FACS/TwinsUK/plot.dir/P1_CD4EM_gate.png",
+       filename="plot.dir/P1_CD4EM_gate.png",
        height=2.75, width=2.75, dpi=300)
 
 em.gates.p
@@ -442,7 +441,7 @@ naive.gates.p <- ggcyto(P1.gs[1], aes(x=`V450-A`, y=`R660-A`), subset="/CD3/CD4/
   geom_gate(Naive.gate)
 
 ggsave(naive.gates.p,
-       filename="~/Dropbox/Noise_FACS/TwinsUK/plot.dir/P1_CD4naive_gate.png",
+       filename="plot.dir/P1_CD4naive_gate.png",
        height=2.75, width=2.75, dpi=300)
 
 naive.gates.p
@@ -461,7 +460,7 @@ naive.gates.p <- ggcyto(P1.gs[1], aes(x=`V450-A`, y=`R660-A`), subset="/CD3/CD8/
   geom_gate(Naive.gate)
 
 ggsave(naive.gates.p,
-       filename="~/Dropbox/Noise_FACS/TwinsUK/plot.dir/P1_CD8naive_gate.png",
+       filename="plot.dir/P1_CD8naive_gate.png",
        height=2.75, width=2.75, dpi=300)
 
 naive.gates.p
@@ -505,7 +504,7 @@ rte.gates.p <- ggcyto(P1.gs[1], aes(x=`G780-A`, y=`R660-A`), subset="CD3") +
   geom_gate(RTE.gate)
 
 ggsave(rte.gates.p,
-       filename="~/Dropbox/Noise_FACS/TwinsUK/plot.dir/P1_RTE_gate.png",
+       filename="plot.dir/P1_RTE_gate.png",
        height=2.75, width=2.75, dpi=300)
 
 rte.gates.p
@@ -544,7 +543,7 @@ ttm.gates.p <- ggcyto(P1.gs[1], aes(x=`G560-A`, y=`R660-A`), subset="/CD3/CD4/CC
   geom_gate(TTM.gate)
 
 ggsave(ttm.gates.p,
-       filename="~/Dropbox/Noise_FACS/TwinsUK/plot.dir/P1_CD4TTM_gate.png",
+       filename="plot.dir/P1_CD4TTM_gate.png",
        height=2.75, width=2.75, dpi=300)
 
 ttm.gates.p
@@ -583,7 +582,7 @@ scm.gates.p <- ggcyto(P1.gs[1], aes(x=`G560-A`, y=`R660-A`), subset="/CD3/CD4/CC
   geom_gate(SCM.gate)
 
 ggsave(scm.gates.p,
-       filename="~/Dropbox/Noise_FACS/TwinsUK/plot.dir/P1_CD4SCM_gate.png",
+       filename="plot.dir/P1_CD4SCM_gate.png",
        height=2.75, width=2.75, dpi=300)
 
 scm.gates.p
@@ -623,7 +622,7 @@ cm.gates.p <- ggcyto(P1.gs[1], aes(x=`G660-A`, y=`R660-A`), subset="/CD3/CD4/CCR
   geom_gate(CM.gate)
 
 ggsave(cm.gates.p,
-       filename="~/Dropbox/Noise_FACS/TwinsUK/plot.dir/P1_CD4CM_gate.png",
+       filename="plot.dir/P1_CD4CM_gate.png",
        height=2.75, width=2.75, dpi=300)
 
 cm.gates.p
@@ -641,7 +640,7 @@ sink(file=NULL)
 ## Panel 2
 
 ```{r}
-path.to.files <- "~/Dropbox/Noise_FACS/TwinsUK/FCS_files/"
+path.to.files <- "TwinsUK/FCS_files/"
 P2.flow.data <- read.flowSet(path=path.to.files,
                              transformation=FALSE, pattern="P2")
 
@@ -752,7 +751,7 @@ p2.singlet.p <- ggcyto(P2.fs_filt[1], aes(x=`FSC-A`, y=`FSC-H`)) +
   theme(strip.text=element_blank())
 
 ggsave(p2.singlet.p,
-       filename="~/Dropbox/Noise_FACS/TwinsUK/plot.dir/P2_singlet_gate.png",
+       filename="plot.dir/P2_singlet_gate.png",
        height=2.75, width=2.75, dpi=300)
 
 p2.singlet.p
@@ -781,7 +780,7 @@ p.live <- ggcyto(P2.singlet[1], aes(x=`V545-A`, y=`SSC-A`)) +
   theme(strip.text=element_blank())
 
 ggsave(p.live,
-       filename="~/Dropbox/Noise_FACS/TwinsUK/plot.dir/P2_live_gate.png",
+       filename="plot.dir/P2_live_gate.png",
        height=2.75, width=2.75, dpi=300)
 
 p.live
@@ -847,7 +846,7 @@ cd3.p <- ggcyto(P2.gs[6], aes(x=`SSC-A`, y=`R780-A`), subset="root") +
   theme(strip.text=element_blank())
 
 ggsave(cd3.p,
-       filename="~/Dropbox/Noise_FACS/TwinsUK/plot.dir/P2_CD3_Gate.png",
+       filename="plot.dir/P2_CD3_Gate.png",
        height=2.75, width=2.75, dpi=300)
 
 cd3.p
@@ -897,7 +896,7 @@ tcell.p <- ggcyto(P2.gs[1], aes(x=`V585-A`, y=`V605-A`), subset="CD3") +
   theme(strip.text=element_blank())
 
 ggsave(tcell.p,
-       filename="~/Dropbox/Noise_FACS/TwinsUK/plot.dir/P2_Tcell_gates.png",
+       filename="plot.dir/P2_Tcell_gates.png",
        height=2.75,width=2.75, dpi=300)
 
 tcell.p
@@ -953,7 +952,7 @@ treg.p <- ggcyto(P2.gs[1], aes(x=`G660-A`, y=`FSC-A`), subset="/CD3/CD4") +
   theme(strip.text=element_blank())
 
 ggsave(treg.p,
-       filename="~/Dropbox/Noise_FACS/TwinsUK/plot.dir/P2_Treg_gate.png",
+       filename="plot.dir/P2_Treg_gate.png",
        height=2.75, width=2.75, dpi=300)
 
 treg.p 
@@ -992,7 +991,7 @@ exhaust.p <- ggcyto(P2.gs[1], aes(x=`V450-A`, y=`B515-A`), subset="/CD3/CD4") +
   theme(strip.text=element_blank())
 
 ggsave(exhaust.p,
-       filename="~/Dropbox/Noise_FACS/TwinsUK/plot.dir/P2_exhausted_gate.png",
+       filename="plot.dir/P2_exhausted_gate.png",
        height=2.75, width=2.75, dpi=300)
 
 exhaust.p
@@ -1016,13 +1015,9 @@ sink(file=NULL)
 ######################################
 ### Panel 3 - Helper T cell subsets ##
 ######################################
+print("TwinsUK - Panel 3")
 
-source("~/Dropbox/R_sessions/SingleCellFunctions/single_cell_functions.R")
-source("~/Dropbox/R_sessions/GGMike/theme_mike.R")
-
-print("TwinsUK - Panel 3A")
-
-path.to.files <- "~/Dropbox/Noise_FACS/TwinsUK/FCS_files/"
+path.to.files <- "TwinsUK/FCS_files/"
 P3.flow.data <- read.flowSet(path=path.to.files,
                              transformation=FALSE, pattern="P3")
 
@@ -1135,7 +1130,7 @@ singlet.p <- ggcyto(P3.fs_filt[1], aes(x=`FSC-A`, y=`FSC-H`)) +
   theme(strip.text=element_blank())
 
 ggsave(singlet.p,
-       filename="~/Dropbox/Noise_FACS/TwinsUK/plot.dir/P3_single_gate.png",
+       filename="plot.dir/P3_single_gate.png",
        height=2.75, width=2.75, dpi=300)
 
 singlet.p
@@ -1162,7 +1157,7 @@ live.p <- ggcyto(P3.singlet[1], aes(x=`V545-A`, y=`SSC-A`)) +
   theme(strip.text=element_blank())
 
 ggsave(live.p,
-       filename="~/Dropbox/Noise_FACS/TwinsUK/plot.dir/P3_live_gate.png",
+       filename="plot.dir/P3_live_gate.png",
        height=2.75, width=2.75, dpi=300)
 
 live.p
@@ -1219,16 +1214,11 @@ densityplot(x=~`G780-A`,
 ```
 
 ```{r}
-#P3.warping <- warpSet(P3.warping, stains=second.warp, peakNr=2)
 # set up gating scheme using a GatingSet object
 P3.gs <- GatingSet(P3.warping)
 ```
 
 ```{r}
-# rm(list=c("P3.warping", "P3.flow.data", "P3.filter", "P3.singlet", 
-#           "P3.fs_filt"))
-# gc()
-
 # # plot Cd3 vs side scatter
 # ggcyto(P3.gs[1:6], aes(x=`SSC-A`, y=`G610-A`), subset="root") +
 #   geom_hex(bins=256) +
@@ -1251,7 +1241,7 @@ cd3.p <- ggcyto(P3.gs[1], aes(x=`SSC-A`, y=`R780-A`), subset="root") +
   theme(strip.text=element_blank())
 
 ggsave(cd3.p,
-       filename="~/Dropbox/Noise_FACS/TwinsUK/plot.dir/P3_CD3_gate.png",
+       filename="plot.dir/P3_CD3_gate.png",
        height=2.75, width=2.75, dpi=300)
 
 cd3.p
@@ -1295,7 +1285,7 @@ cd48.p <- ggcyto(P3.gs[1], aes(x=`V585-A`, y=`V800-A`), subset="CD3") +
   theme(strip.text=element_blank())
 
 ggsave(cd48.p,
-       filename="~/Dropbox/Noise_FACS/TwinsUK/plot.dir/P3_Tcell_gate.png",
+       filename="plot.dir/P3_Tcell_gate.png",
        height=2.75, width=2.75, dpi=300)
 
 cd48.p
@@ -1349,7 +1339,7 @@ tfh.p <- ggcyto(P3.gs[1], aes(x=`R660-A`, y=`V800-A`), subset="/CD3/CD4") +
   theme(strip.text=element_blank())
 
 ggsave(tfh.p,
-       filename="~/Dropbox/Noise_FACS/TwinsUK/plot.dir/P3_Tfh_gate.png",
+       filename="plot.dir/P3_Tfh_gate.png",
        height=2.75, width=2.75, dpi=300)
 
 tfh.p
@@ -1381,7 +1371,7 @@ th1.p <- ggcyto(P3.gs[1], aes(x=`G660-A`, y=`V800-A`), subset="/CD3/CD4") +
   theme(strip.text=element_blank())
 
 ggsave(th1.p,
-       filename="~/Dropbox/Noise_FACS/TwinsUK/plot.dir/P3_Th1_gate.png",
+       filename="plot.dir/P3_Th1_gate.png",
        height=2.75, width=2.75, dpi=300)
 
 th1.p
@@ -1413,7 +1403,7 @@ th2.p <- ggcyto(P3.gs[1], aes(x=`G780-A`, y=`V800-A`), subset="/CD3/CD4") +
   theme(strip.text=element_blank())
 
 ggsave(th2.p,
-       filename="~/Dropbox/Noise_FACS/TwinsUK/plot.dir/P3_Th2_gate.png",
+       filename="plot.dir/P3_Th2_gate.png",
        height=2.75, width=2.75, dpi=300)
 
 th2.p
@@ -1438,6 +1428,7 @@ flowWorkspace::add(P3.gs, TH9.gate, parent="/CD3/CD4/CCR4negCXCR3neg")
 recompute(P3.gs)
 ```
 
+
 ```{r, fig.height=2.75, fig.width=2.75  }
 # #plot the remaining T cell markers
 ccrneg.p <- ggcyto(P3.gs[1], aes(x=`G780-A`, y=`G660-A`), subset="/CD3/CD4") +
@@ -1449,7 +1440,7 @@ ccrneg.p <- ggcyto(P3.gs[1], aes(x=`G780-A`, y=`G660-A`), subset="/CD3/CD4") +
   theme(strip.text=element_blank())
 
 ggsave(ccrneg.p,
-       filename="~/Dropbox/Noise_FACS/TwinsUK/plot.dir/P3_CCRneg_gate.png",
+       filename="plot.dir/P3_CCRneg_gate.png",
        height=2.75, width=2.75, dpi=300)
 
 ccrneg.p
@@ -1466,7 +1457,7 @@ th9.p <- ggcyto(P3.gs[1], aes(x=`G780-A`, y=`V605-A`), subset="/CD3/CD4/CCR4negC
   theme(strip.text=element_blank())
 
 ggsave(th9.p,
-       filename="~/Dropbox/Noise_FACS/TwinsUK/plot.dir/P3_Th9_gate.png",
+       filename="plot.dir/P3_Th9_gate.png",
        height=2.75, width=2.75, dpi=300)
 
 th9.p
@@ -1498,7 +1489,7 @@ th17.p <- ggcyto(P3.gs[1], aes(x=`V605-A`, y=`B515-A`), subset="/CD3/CD4") +
   theme(strip.text=element_blank())
 
 ggsave(th17.p,
-       filename="~/Dropbox/Noise_FACS/TwinsUK/plot.dir/P3_Th17_gate.png",
+       filename="plot.dir/P3_Th17_gate.png",
        height=2.75, width=2.75, dpi=300)
 
 th17.p
@@ -1533,7 +1524,7 @@ th22.p <- ggcyto(P3.gs[1], aes(x=`G780-A`, y=`G560-A`), subset="/CD3/CD4") +
   theme(strip.text=element_blank())
 
 ggsave(th22.p,
-       filename="~/Dropbox/Noise_FACS/TwinsUK/plot.dir/P3_Th22_gate.png",
+       filename="plot.dir/P3_Th22_gate.png",
        height=2.75, width=2.75, dpi=300)
 
 th22.p
@@ -1552,11 +1543,7 @@ sink(file=NULL)
 
 
 ```{r}
-print("TwinsUK - Panel 4A")
-source("~/Dropbox/R_sessions/SingleCellFunctions/single_cell_functions.R")
-source("~/Dropbox/R_sessions/GGMike/theme_mike.R")
-
-path.to.files <- "~/Dropbox/Noise_FACS/TwinsUK/FCS_files/"
+print("TwinsUK - Panel 4")
 
 P4.flow.data <- read.flowSet(path=path.to.files,
                              transformation=FALSE, pattern="P4")
@@ -1637,10 +1624,6 @@ P4.fs_filt <- transform(P4.fs_filt, transform16)
 P4.fs_filt <- transform(P4.fs_filt, transform17)
 P4.fs_filt <- transform(P4.fs_filt, transform18)
 
-# P4.fs_filt <- transform(P4.fs_filt, transformForwardH)
-# P4.fs_filt <- transform(P4.fs_filt, transformSideA)
-# P4.fs_filt <- transform(P4.fs_filt, transformForwardA)
-
 # # gate on singlets
 # ggcyto(P4.fs_filt[1:6], aes(x=`FSC-A`, y=`FSC-H`)) +
 #   geom_hex(bins=128) +
@@ -1665,7 +1648,7 @@ singlet.p <- ggcyto(P4.fs_filt[1], aes(x=`FSC-A`, y=`FSC-H`)) +
   theme(strip.text=element_blank())
 
 ggsave(singlet.p,
-       filename="~/Dropbox/Noise_FACS/TwinsUK/plot.dir/P4_singlet.png",
+       filename="plot.dir/P4_singlet.png",
        height=2.75, width=2.75, dpi=300)
 
 singlet.p
@@ -1691,7 +1674,7 @@ live.p <- ggcyto(P4.singlet[1], aes(x=`V545-A`, y=`SSC-A`)) +
   theme(strip.text=element_blank())
 
 ggsave(live.p,
-       filename="~/Dropbox/Noise_FACS/TwinsUK/plot.dir/P4_live.png",
+       filename="plot.dir/P4_live.png",
        height=2.75, width=2.75, dpi=300)
 
 live.p
@@ -1725,19 +1708,12 @@ P4.filter <- transform(P4.filter, transformForwardA)
 
 pars <- colnames(P4.filter)[4:21]
 P4.warping <- warpSet(P4.filter, stains=pars)
-#P4.warping <- warpSet(P4.warping, stains=second.warp, peakNr=2)
 ```
 
 
 ```{r}
 # set up gating scheme using a GatingSet object
 P4.gs <- GatingSet(P4.warping)
-```
-
-```{r}
-# rm(list=c("P4.warping", "P4.flow.data", "P4.filter", "P4.singlet", 
-#           "P4.fs_filt"))
-# gc()
 ```
 
 
@@ -1766,11 +1742,12 @@ cd3.p <- ggcyto(P4.gs[1], aes(x=`SSC-A`, y=`R780-A`), subset="root") +
   theme(strip.text=element_blank())
 
 ggsave(cd3.p,
-       filename="~/Dropbox/Noise_FACS/TwinsUK/plot.dir/P4_CD3_gate.png",
+       filename="plot.dir/P4_CD3_gate.png",
        height=2.75, width=2.75, dpi=300)
 
 cd3.p
 ```
+
 
 ```{r}
 
@@ -1827,19 +1804,10 @@ nk.p <- ggcyto(P4.gs[4], aes(x=`V585-A`, y=`V450-A`), subset="/CD3neg") +
   theme(strip.text=element_blank())
 
 ggsave(nk.p,
-       filename="~/Dropbox/Noise_FACS/TwinsUK/plot.dir/P4_NK_Gate.png",
+       filename="plot.dir/P4_NK_Gate.png",
        height=2.75, width=2.75, dpi=300)
 
 nk.p
-```
-
-
-```{r}
-# # flush all the files out before the next panel
-# sink(file="/dev/null")
-# rm(list=ls())
-# gc()
-# sink(file=NULL)
 ```
 
 
@@ -1847,7 +1815,7 @@ nk.p
 
 ```{r}
 print("TwinsUK Panel 5A")
-path.to.files <- "~/Dropbox/Noise_FACS/TwinsUK/FCS_files/"
+path.to.files <- "TwinsUK/FCS_files/"
 P5.flow.data <- read.flowSet(path=path.to.files,
                              transformation=FALSE, pattern="P5")
 
@@ -1931,10 +1899,6 @@ P5.fs_filt <- transform(P5.fs_filt, transform15)
 P5.fs_filt <- transform(P5.fs_filt, transform16)
 P5.fs_filt <- transform(P5.fs_filt, transform17)
 P5.fs_filt <- transform(P5.fs_filt, transform18)
-
-# P5.fs_filt <- transform(P5.fs_filt, transformForwardH)
-# P5.fs_filt <- transform(P5.fs_filt, transformSideA)
-# P5.fs_filt <- transform(P5.fs_filt, transformForwardA)
 ```
 
 ```{r}
@@ -1964,7 +1928,7 @@ singlet.p <- ggcyto(P5.fs_filt[1], aes(x=`FSC-A`, y=`FSC-H`)) +
   theme(strip.text=element_blank())
 
 ggsave(singlet.p,
-       filename="~/Dropbox/Noise_FACS/TwinsUK/plot.dir/P5_singlet.png",
+       filename="plot.dir/P5_singlet.png",
        height=2.75, width=2.75, dpi=300)
 
 singlet.p
@@ -1991,7 +1955,7 @@ live.p <- ggcyto(P5.singlet[1], aes(x=`V545-A`, y=`SSC-A`)) +
   theme(strip.text=element_blank())
 
 ggsave(live.p,
-       filename="~/Dropbox/Noise_FACS/TwinsUK/plot.dir/P5_live.png",
+       filename="plot.dir/P5_live.png",
        height=2.75, width=2.75, dpi=300)
 
 live.p
@@ -2036,10 +2000,6 @@ P5.warping <- warpSet(P5.warping, stains=second.warp, peakNr=2)
 # set up gating scheme using a GatingSet object
 P5.gs <- GatingSet(P5.warping)
 
-# rm(list=c("P5.warping", "P5.flow.data", "P5.filter", "P5.singlet", 
-#           "P5.fs_filt"))
-# gc()
-
 # densityplot(x=~`G710-A`,
 #             data=P5.warping[4:9],
 #             channel=c("G710-A"))
@@ -2067,7 +2027,7 @@ tcell.p <- ggcyto(P5.gs[1], aes(x=`FSC-A`, y=`V800-A`), subset="root") +
   lims(y=c(0, 12))
 
 ggsave(tcell.p,
-       filename="~/Dropbox/Noise_FACS/TwinsUK/plot.dir/P5_CD3_gate.png",
+       filename="plot.dir/P5_CD3_gate.png",
        height=2.75, width=2.75, dpi=300)
 
 tcell.p
@@ -2107,7 +2067,7 @@ hsc.p <- ggcyto(P5.gs[1], aes(x=`V450-A`, y=`V800-A`), subset="root") +
   lims(y=c(0, 12))
 
 ggsave(hsc.p,
-       filename="~/Dropbox/Noise_FACS/TwinsUK/plot.dir/P5_HSC_gate.png",
+       filename="plot.dir/P5_HSC_gate.png",
        height=2.75, width=2.75, dpi=300)
 
 hsc.p
@@ -2138,11 +2098,12 @@ nkt.p <- ggcyto(P5.gs[1], aes(x=`G560-A`, y=`V800-A`), subset="/CD3") +
   lims(x=c(0, 12), y=c(0, 12))
 
 ggsave(nkt.p,
-       filename="~/Dropbox/Noise_FACS/TwinsUK/plot.dir/P5_NKT_gate.png",
+       filename="plot.dir/P5_NKT_gate.png",
        height=2.75, width=2.75, dpi=300)
 
 nkt.p
 ```
+
 
 ```{r}
 ######################################
@@ -2167,7 +2128,7 @@ naivenkt.p <- ggcyto(P5.gs[1], aes(x=`V605-A`, y=`R780-A`), subset="/CD3/NKT") +
   lims(x=c(0, 12), y=c(0, 12))
 
 ggsave(naivenkt.p,
-       filename="~/Dropbox/Noise_FACS/TwinsUK/plot.dir/P5_naiveNKT_gate.png",
+       filename="plot.dir/P5_naiveNKT_gate.png",
        height=2.75, width=2.75, dpi=300)
 
 naivenkt.p
@@ -2218,7 +2179,7 @@ earlynkt.p <- ggcyto(P5.gs[1], aes(x=`V605-A`, y=`R780-A`), subset="/CD3/NKT") +
   lims(x=c(0, 12), y=c(0, 12))
 
 ggsave(earlynkt.p,
-       filename="~/Dropbox/Noise_FACS/TwinsUK/plot.dir/P5_earlyNKT_gate.png",
+       filename="plot.dir/P5_earlyNKT_gate.png",
        height=2.75, width=2.75, dpi=300)
 
 earlynkt.p
@@ -2237,7 +2198,7 @@ effectnkt.p <- ggcyto(P5.gs[1], aes(x=`V605-A`, y=`V585-A`), subset="/CD3/NKT") 
   lims(x=c(0, 12), y=c(0, 12))
 
 ggsave(effectnkt.p,
-       filename="~/Dropbox/Noise_FACS/TwinsUK/plot.dir/P5_effectorNKT_gate.png",
+       filename="plot.dir/P5_effectorNKT_gate.png",
        height=2.75, width=2.75, dpi=300)
 
 effectnkt.p
@@ -2279,7 +2240,7 @@ vd1.p <- ggcyto(P5.gs[1], aes(x=`B515-A`, y=`G610-A`), subset="/CD3") +
   geom_gate(Vd1.gate)
 
 ggsave(vd1.p,
-       filename="~/Dropbox/Noise_FACS/TwinsUK/plot.dir/P5_gdTVd1_gate.png",
+       filename="plot.dir/P5_gdTVd1_gate.png",
        height=2.75, width=2.75, dpi=300)
 
 vd1.p
@@ -2296,7 +2257,7 @@ vg9.p <- ggcyto(P5.gs[1], aes(x=`B515-A`, y=`R660-A`), subset="/CD3") +
   geom_gate(Vg9.gate)
 
 ggsave(vg9.p,
-       filename="~/Dropbox/Noise_FACS/TwinsUK/plot.dir/P5_gdTVg9_gate.png",
+       filename="plot.dir/P5_gdTVg9_gate.png",
        height=2.75, width=2.75, dpi=300)
 
 vg9.p
@@ -2324,7 +2285,6 @@ Vd2n.gate <- polygonGate(filterId="Vd2neg", .gate=cbind("G610-A"=vd2.points, "R6
 flowWorkspace::add(P5.gs, Vd2n.gate, parent="/CD3/Vg9")
 recompute(P5.gs)
 
-# 
 # # plot Cd3 vs side scatter
 # ggcyto(P5.gs[6:9], aes(x=`R660-A`, y=`G610-A`), subset="/CD3/Vg9") +
 #   geom_hex(bins=128) +
@@ -2346,7 +2306,7 @@ vd2.p <- ggcyto(P5.gs[1], aes(x=`R660-A`, y=`G610-A`), subset="/CD3/Vg9") +
   geom_gate(Vd2p.gate)
 
 ggsave(vd2.p,
-       filename="~/Dropbox/Noise_FACS/TwinsUK/plot.dir/P5_gdTVd2_gate.png",
+       filename="plot.dir/P5_gdTVd2_gate.png",
        height=2.75, width=2.75, dpi=300)
 
 vd2.p
@@ -2366,7 +2326,6 @@ sink(file=NULL)
 
 ```{r}
 print("TwinsUK Panel 6")
-path.to.files <- "~/Dropbox/Noise_FACS/TwinsUK/FCS_files/"
 P6.flow.data <- read.flowSet(path=path.to.files,
                              transformation=FALSE, pattern="P6")
 
@@ -2451,10 +2410,6 @@ P6.fs_filt <- transform(P6.fs_filt, transform16)
 P6.fs_filt <- transform(P6.fs_filt, transform17)
 P6.fs_filt <- transform(P6.fs_filt, transform18)
 
-# P6.fs_filt <- transform(P6.fs_filt, transformForwardH)
-# P6.fs_filt <- transform(P6.fs_filt, transformSideA)
-# P6.fs_filt <- transform(P6.fs_filt, transformForwardA)
-
 # # # gate on singlets
 # ggcyto(P6.fs_filt[1:6], aes(x=`FSC-A`, y=`FSC-H`)) +
 #   geom_hex(bins=128) +
@@ -2480,7 +2435,7 @@ singlet.p <- ggcyto(P6.fs_filt[1], aes(x=`FSC-A`, y=`FSC-H`)) +
   theme(strip.text=element_blank())
 
 ggsave(singlet.p,
-       filename="~/Dropbox/Noise_FACS/TwinsUK/plot.dir/P6_singlet.png",
+       filename="plot.dir/P6_singlet.png",
        height=2.75, width=2.75, dpi=300)
 
 singlet.p
@@ -2511,7 +2466,7 @@ live.p <- ggcyto(P6.singlet[1], aes(x=`V545-A`, y=`SSC-A`)) +
   theme(strip.text=element_blank())
 
 ggsave(live.p,
-       filename="~/Dropbox/Noise_FACS/TwinsUK/plot.dir/P6_live_gate.png",
+       filename="plot.dir/P6_live_gate.png",
        height=2.75, width=2.75, dpi=300)
 
 live.p
@@ -2543,11 +2498,7 @@ densityplot(x=~`G710-A`,
             channel=c("G710-A"))
 
 pars <- colnames(P6.filter)[4:21]
-# second.warp <- c("G560-A")
-# first.warp <- pars[!pars %in% second.warp]
 P6.warping <- warpSet(P6.filter, stains=pars)
-#P6.warping <- warpSet(P6.filter, stains=first.warp)
-#P6.warping <- warpSet(P6.warping, stains=second.warp, peakNr=2)
 
 # densityplot(x=~`G560-A`,
 #             data=P6.warping[4:9],
@@ -2555,18 +2506,10 @@ P6.warping <- warpSet(P6.filter, stains=pars)
 ```
 
 
-
 ```{r}
 # set up gating scheme using a GatingSet object
 P6.gs <- GatingSet(P6.warping)
 ```
-
-```{r}
-# rm(list=c("P6.warping", "P6.flow.data", "P6.filter", "P6.singlet", 
-#           "P6.fs_filt"))
-# gc()
-```
-
 
 ```{r}
 cd19.points <- c(0, 0, 12, 12, 6.25, 6.25, 5.5, 0)
@@ -2585,7 +2528,7 @@ bcell.p <- ggcyto(P6.gs[1], aes(x=`V605-A`, y=`V655-A`), subset="root") +
   theme(strip.text=element_blank())
 
 ggsave(bcell.p,
-       filename="~/Dropbox/Noise_FACS/TwinsUK/plot.dir/P6_Bcell_gate.png",
+       filename="plot.dir/P6_Bcell_gate.png",
        height=2.75, width=2.75, dpi=300)
 
 bcell.p
@@ -2638,7 +2581,7 @@ mature.p <- ggcyto(P6.gs[6], aes(x=`R660-A`, y=`G710-A`), subset="/Bcells") +
   theme(strip.text=element_blank())
 
 ggsave(mature.p,
-       filename="~/Dropbox/Noise_FACS/TwinsUK/plot.dir/P6_matureBcell_gate.png",
+       filename="plot.dir/P6_matureBcell_gate.png",
        height=2.75, width=2.75, dpi=300)
 
 mature.p
@@ -2679,7 +2622,7 @@ mem.p <- ggcyto(P6.gs[4], aes(x=`G660-A`, y=`V450-A`), subset="/Bcells/Mature") 
   theme(strip.text=element_blank())
 
 ggsave(mem.p,
-       filename="~/Dropbox/Noise_FACS/TwinsUK/plot.dir/P6_memoryBcell_gate.png",
+       filename="plot.dir/P6_memoryBcell_gate.png",
        height=2.75, width=2.75, dpi=300)
 
 mem.p
@@ -2708,6 +2651,7 @@ flowWorkspace::add(P6.gs, igg.gate, parent="Memory")
 recompute(P6.gs)
 ```
 
+
 ```{r}
 ######################################################
 # Neg Memory mature B cells - CD19+CD10-CD95+IgA-IgG- 
@@ -2734,7 +2678,7 @@ igg.p <- ggcyto(P6.gs[4], aes(x=`G560-A`, y=`V450-A`), subset="/Bcells/Mature/Me
   theme(strip.text=element_blank())
 
 ggsave(igg.p,
-       filename="~/Dropbox/Noise_FACS/TwinsUK/plot.dir/P6_IgGBcell_gate.png",
+       filename="plot.dir/P6_IgGBcell_gate.png",
        height=2.75, width=2.75, dpi=300)
 
 igg.p
@@ -2776,7 +2720,7 @@ igm.p <- ggcyto(P6.gs[4], aes(x=`R710-A`, y=`V585-A`), subset="/Bcells/Mature/Me
   theme(strip.text=element_blank())
 
 ggsave(igm.p,
-       filename="~/Dropbox/Noise_FACS/TwinsUK/plot.dir/P6_IgMBcell_gate.png",
+       filename="plot.dir/P6_IgMBcell_gate.png",
        height=2.75, width=2.75, dpi=300)
 
 igm.p
@@ -2883,10 +2827,6 @@ P7.fs_filt <- transform(P7.fs_filt, transform16)
 P7.fs_filt <- transform(P7.fs_filt, transform17)
 P7.fs_filt <- transform(P7.fs_filt, transform18)
 
-# P7.fs_filt <- transform(P7.fs_filt, transformForwardH)
-# P7.fs_filt <- transform(P7.fs_filt, transformSideA)
-# P7.fs_filt <- transform(P7.fs_filt, transformForwardA)
-
 # # gate on singlets
 # ggcyto(P7.fs_filt[1:6], aes(x=`FSC-A`, y=`FSC-H`)) +
 #   geom_hex(bins=128) +
@@ -2913,7 +2853,7 @@ single.p <- ggcyto(P7.fs_filt[1], aes(x=`FSC-A`, y=`FSC-H`)) +
   geom_gate(singlet.gates)
 
 ggsave(single.p,
-       filename="~/Dropbox/Noise_FACS/TwinsUK/plot.dir/P7_singlet_gate.png",
+       filename="plot.dir/P7_singlet_gate.png",
        height=2.75, width=2.75, dpi=300)
 
 single.p
@@ -2943,7 +2883,7 @@ live.p <- ggcyto(P7.singlet[1], aes(x=`V545-A`, y=`SSC-A`)) +
   lims(x=c(0, 13))
 
 ggsave(live.p,
-       filename="~/Dropbox/Noise_FACS/TwinsUK/plot.dir/P7_live_gate.png",
+       filename="plot.dir/P7_live_gate.png",
        height=2.75, width=2.75, dpi=300)
 
 live.p
@@ -2997,15 +2937,6 @@ P7.gs <- GatingSet(P7.warping)
 ```
 
 
-
-```{r}
-# rm(list=c("P7.warping", "P7.flow.data", "P7.filter", "P7.singlet",
-#           "P7.fs_filt"))
-# gc()
-```
-
-
-
 ```{r}
 # plot HLA-DR vs lineage markers to select APCs
 lin.points <- c(0, 0, 8.5, 8.5, 0)
@@ -3035,7 +2966,7 @@ hla.p <- ggcyto(P7.gs[1], aes(x=`R710-A`, y=`V605-A`), subset="root") +
   lims(x=c(0, 12), y=c(0, 12))
 
 ggsave(hla.p,
-       filename="~/Dropbox/Noise_FACS/TwinsUK/plot.dir/P7_HLA_gate.png",
+       filename="plot.dir/P7_HLA_gate.png",
        height=2.75, width=2.75, dpi=300)
 
 hla.p
@@ -3066,7 +2997,7 @@ negmono.p <- ggcyto(P7.gs[1], aes(x=`R710-A`, y=`V800-A`), subset="/DC") +
   lims(x=c(0, 12), y=c(0, 12))
 
 ggsave(negmono.p,
-       filename="~/Dropbox/Noise_FACS/TwinsUK/plot.dir/P7_negMono_gate.png",
+       filename="plot.dir/P7_negMono_gate.png",
        height=2.75, width=2.75, dpi=300)
 
 negmono.p
@@ -3110,7 +3041,7 @@ mono.p <- ggcyto(P7.gs[1], aes(y=`G710-A`, x=`V800-A`), subset="root") +
   lims(x=c(0, 12), y=c(0, 12))
 
 ggsave(mono.p,
-       filename="~/Dropbox/Noise_FACS/TwinsUK/plot.dir/P7_Mono_gate.png",
+       filename="plot.dir/P7_Mono_gate.png",
        height=2.75, width=2.75, dpi=300)
 
 mono.p
@@ -3160,7 +3091,7 @@ dc.p <- ggcyto(P7.gs[4], aes(y=`G660-A`, x=`G560-A`), subset="/DC/Neg") +
   lims(x=c(0, 12), y=c(0, 12))
 
 ggsave(dc.p,
-       filename="~/Dropbox/Noise_FACS/TwinsUK/plot.dir/P7_DC_gate.png",
+       filename="plot.dir/P7_DC_gate.png",
        height=2.75, width=2.75, dpi=300)
 
 dc.p
@@ -3214,7 +3145,7 @@ cddc.p <- ggcyto(P7.gs[4], aes(y=`R780-A`, x=`B515-A`), subset="/DC/Neg/MDC") +
   lims(x=c(0, 12), y=c(0, 12))
 
 ggsave(cddc.p,
-       filename="~/Dropbox/Noise_FACS/TwinsUK/plot.dir/P7_CDDC_gate.png",
+       filename="plot.dir/P7_CDDC_gate.png",
        height=2.75, width=2.75, dpi=300)
 
 cddc.p
@@ -3255,7 +3186,7 @@ infdc.p <- ggcyto(P7.gs[4], aes(y=`G710-A`, x=`B515-A`), subset="/DC/Neg/MDC/Dou
   lims(x=c(0, 12), y=c(0, 12))
 
 ggsave(infdc.p,
-       filename="~/Dropbox/Noise_FACS/TwinsUK/plot.dir/P7_InfDC_gate.png",
+       filename="plot.dir/P7_InfDC_gate.png",
        height=2.75, width=2.75, dpi=300)
 
 infdc.p
