@@ -1,0 +1,729 @@
+---
+title: "Genetics of Noise - aggregated noise QTL summary: TwinsUK & MI"
+output: html_notebook
+---
+
+## Introduction
+
+This notebook summarises over all variability QTLs identified in the either the TwinsUK or MI cohorts.
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+library(ggplot2)
+library(scales)
+library(biomaRt)
+library(lettercase)
+library(reshape2)
+library(goseq)
+library(stringi)
+library(pheatmap)
+library(circlize)
+library(ComplexHeatmap)
+library(gridBase)
+source("~/Dropbox/R_sessions/GGMike/theme_mike.R")
+
+# location of the association results files from TwinsUK lead SNPs
+twins.results_dir <- "TwinsUK/lead_files/"
+twins.results_files <- list.files(twins.results_dir, pattern=".lead")
+twins.results_files <- twins.results_files[!grepl(twins.results_files, pattern="Joint")]
+
+twins.res_list <- list()
+# loop over the files for each trait
+twins.traits <- unique(unlist(lapply(strsplit(twins.results_files, split="-", fixed=TRUE), 
+                               FUN=function(P) paste(P[1:2], collapse="-"))))
+twins.traits <- twins.traits[!grepl(twins.traits, pattern="Joint")]
+twins.traits <- gsub(twins.traits, pattern=".lead", replacement="")
+
+for(i in seq_along(twins.results_files)){
+  i.trait <- twins.traits[i]
+  r.file <- paste0(twins.results_dir, twins.results_files[i])
+  is.empty <- file.info(r.file)$size == 0
+  if(!is.empty){
+    r.df <- read.table(r.file, sep="\t", header=TRUE, stringsAsFactors=FALSE)
+    
+    if(nrow(r.df) > 0){
+      r.df$FullTrait <- i.trait
+      twins.res_list[[i.trait]] <- r.df
+    }
+  }
+}
+
+
+twins.clump.df <- do.call(rbind.data.frame,
+                    twins.res_list)
+twins.clump.df$Measure <- unlist(lapply(strsplit(twins.clump.df$FullTrait, split="-", fixed=TRUE),
+                                  FUN=function(X) paste0(X[1])))
+
+twins.clump.df$CellType <- unlist(lapply(strsplit(twins.clump.df$FullTrait, split="_", fixed=TRUE),
+                                   FUN=function(X) paste0(X[2])))
+
+twins.clump.df$Panel <- unlist(lapply(strsplit(twins.clump.df$FullTrait, split="_", fixed=TRUE),
+                                FUN=function(X) paste0(X[3])))
+
+twins.clump.df$Protein <- unlist(lapply(strsplit(unlist(lapply(strsplit(twins.clump.df$FullTrait, split="_", fixed=TRUE),
+                                                         FUN=function(X) paste0(X[1]))),
+                                           fixed=TRUE, split="-"),
+                                  FUN=function(G) paste0(G[2])))
+```
+
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+# this aids with the mapping of traits between cohorts
+twins.harmonise <- read.table("TwinsUK/TwinsUK-harmonized_traits.txt",
+                              sep="\t", header=TRUE, stringsAsFactors=FALSE)
+
+twins.clump.df <- merge(twins.clump.df, twins.harmonise,
+                  by.x=c("Protein", "CellType"),
+                  by.y=c("Protein", "CellType"))
+
+twins.clump.df$ShortCell <- unlist(lapply(strsplit(twins.clump.df$HarmonCell, split=".", fixed=TRUE),
+                                       FUN=function(X) paste0(X[length(X)])))
+```
+
+
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+twins.clump.df$ProteinCHR <- "NA"
+twins.clump.df$ProteinCHR[twins.clump.df$Protein %in% c("CD16", "CD161", "CD1c", "CD1.multi", "CD244", "CD32", "CD34", "CD45RA", "CD45RO", "CD62L", "CD64")] <- 1
+twins.clump.df$ProteinCHR[twins.clump.df$Protein %in% c("CCR4", "CD28", "CD8", "CD83", "CXCR5", "HLADR", "PD1")] <- 2
+twins.clump.df$ProteinCHR[twins.clump.df$Protein %in% c("CCR4", "CCR5", "CD10")] <- 3
+twins.clump.df$ProteinCHR[twins.clump.df$Protein %in% c("CD38")] <- 4
+twins.clump.df$ProteinCHR[twins.clump.df$Protein %in% c("CD127", "CD14")] <- 5
+twins.clump.df$ProteinCHR[twins.clump.df$Protein %in% c("CCR6", "CD24", "CD337", "CD73", "CD83", "HLADR")] <- 6
+twins.clump.df$ProteinCHR[twins.clump.df$Protein %in% c("CD274")] <- 9
+twins.clump.df$ProteinCHR[twins.clump.df$Protein %in% c("CD25", "CD39", "CD95")] <- 10
+twins.clump.df$ProteinCHR[twins.clump.df$Protein %in% c("CD2", "CD20", "CD21", "CD3", "CD5", "CD56", "CD57", "CXCR5")] <- 11
+twins.clump.df$ProteinCHR[twins.clump.df$Protein %in% c("CD27", "CD314", "CD4")] <- 12
+twins.clump.df$ProteinCHR[twins.clump.df$Protein %in% c("TCR.Vd1", "TCR.Vd2", "TCR.Vg9")] <- 14
+twins.clump.df$ProteinCHR[twins.clump.df$Protein %in% c("CD11c", "CD19", "IgA", "IgD", "IgG", "IgM")] <- 16
+twins.clump.df$ProteinCHR[twins.clump.df$Protein %in% c("CCR10", "CCR7", "CD31")] <- 17
+twins.clump.df$ProteinCHR[twins.clump.df$Protein %in% c("CD158a.h", "CD158b", "CD335")] <- 19
+twins.clump.df$ProteinCHR[twins.clump.df$Protein %in% c("CD141")] <- 20
+twins.clump.df$ProteinCHR[twins.clump.df$Protein %in% c("CD123", "CXCR3")] <- "X"
+
+twins.clump.df$CHR <- as.character(twins.clump.df$CHR)
+
+twins.clump.df$QTL <- "NA"
+twins.clump.df$QTL[twins.clump.df$CHR == twins.clump.df$ProteinCHR] <- "cis"
+twins.clump.df$QTL[twins.clump.df$CHR != twins.clump.df$ProteinCHR] <- "trans"
+```
+
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE, results='hide'}
+biomaRt.connection <- useMart("ensembl", "hsapiens_gene_ensembl", host="grch37.ensembl.org", path="/biomart/martservice")
+twins.all.genes <- unique(twins.clump.df$Gene)
+
+twins.gene.df <- getBM(attributes = c("ensembl_gene_id", "external_gene_name", "chromosome_name", "start_position", "end_position", "strand"),
+                 filters="external_gene_name", 
+                 values=twins.all.genes, mart=biomaRt.connection)
+```
+
+I'll define the proximal _cis_-QTLs as those within +/- 1Mb of the gene structure.
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+twins.clump.merge <- merge(twins.clump.df, twins.gene.df, by.x=c("Gene", "ProteinCHR"), by.y=c("external_gene_name", "chromosome_name"), all.x=TRUE)
+# for sum reason it doesn't want to find the correct ensembl id for CD21
+
+# assign cis eQTLs to distal or proximal - distal is within 5Mb from the start or end site, i.e. 2.5Mb either side
+twins.clump.merge$Distance <- "Distal"
+twins.clump.merge$Distance[((twins.clump.merge$BP >= twins.clump.merge$start_position-2.5e6) & 
+                              (twins.clump.merge$BP <= twins.clump.merge$end_position+2.5e6)) &
+                             twins.clump.merge$strand == 1] <- "Proximal" 
+twins.clump.merge$Distance[((twins.clump.merge$BP <= twins.clump.merge$start_position+2.5e6) &
+                              (twins.clump.merge$BP >= twins.clump.merge$end_position-2.5e6))
+                           & twins.clump.merge$strand == -1] <- "Proximal" 
+twins.clump.merge$Distance[twins.clump.merge$QTL %in% c("trans")] <- "Distal"
+
+# remove SNPs with NAs for BP, BETA, SE, etc.
+#twins.clump.merge <- twins.clump.merge[!is.na(twins.clump.merge$BETA), ]
+
+twins.clump.merge$Measure <- factor(twins.clump.merge$Measure,
+                              levels=c("Mean", "Noise"),
+                              labels=c("Mean", "Variability"))
+measure.cols <- c("#AC00E3", "#008B19")
+names(measure.cols) <- c("Mean", "Variability")
+```
+
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+twins.clump.merge$SigTier <- "Sub"
+twins.clump.merge$SigTier[twins.clump.merge$P <= 5e-8] <- "Second"
+twins.clump.merge$SigTier[twins.clump.merge$P <= 5e-8/59] <- "Top"
+twins.clump.merge$SigTier <- factor(twins.clump.merge$SigTier,
+                                    levels=c("Top", "Second", "Sub"))
+```
+
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+# directory where MI association results lead files are located
+mi.results_dir <- "~/Dropbox/Noise_FACS/Replication_cohorts/Milieu_Interieur/lead_files/"
+mi.results_files <- list.files(mi.results_dir, pattern=".lead")
+
+mi.res_list <- list()
+# loop over the files for each trait
+mi.traits <- unique(unlist(lapply(strsplit(mi.results_files, split="-", fixed=TRUE), 
+                               FUN=function(P) paste(P[1:2], collapse="-"))))
+mi.traits <- mi.traits[!grepl(mi.traits, pattern="Joint")]
+mi.traits <- gsub(mi.traits, pattern=".lead", replacement="")
+
+for(i in seq_along(mi.results_files)){
+  i.trait <- mi.traits[i]
+  r.file <- paste0(mi.results_dir, mi.results_files[i])
+  is.empty <- file.info(r.file)$size == 0
+  if(!is.empty){
+    r.df <- read.table(r.file, sep="\t", header=TRUE, stringsAsFactors=FALSE)
+    # remove any accidental duplicates
+    r.df <- r.df[!duplicated(r.df$SNP), ]
+    
+    if(nrow(r.df) > 0){
+      r.df$FullTrait <- i.trait
+      mi.res_list[[i.trait]] <- r.df
+    }
+  }
+}
+
+
+mi.clump.df <- do.call(rbind.data.frame,
+                    mi.res_list)
+mi.clump.df$Measure <- unlist(lapply(strsplit(mi.clump.df$FullTrait, split="-", fixed=TRUE),
+                                  FUN=function(X) paste0(X[1])))
+
+mi.clump.df$CellType <- unlist(lapply(strsplit(mi.clump.df$FullTrait, split="_", fixed=TRUE),
+                                   FUN=function(X) paste0(X[2])))
+
+mi.clump.df$Panel <- unlist(lapply(strsplit(mi.clump.df$FullTrait, split="_", fixed=TRUE),
+                                FUN=function(X) paste0(X[3])))
+
+mi.clump.df$Protein <- unlist(lapply(strsplit(unlist(lapply(strsplit(mi.clump.df$FullTrait, split="_", fixed=TRUE),
+                                                         FUN=function(X) paste0(X[1]))),
+                                           fixed=TRUE, split="-"),
+                                  FUN=function(G) paste0(G[2])))
+```
+
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+mi.harmonise <- read.table("Milieu_Interieur/MI-harmonized_traits.txt",
+                              sep="\t", header=TRUE, stringsAsFactors=FALSE)
+
+mi.clump.df <- merge(mi.clump.df, mi.harmonise,
+                  by.x=c("Protein", "CellType"),
+                  by.y=c("Protein", "CellType"))
+
+mi.clump.df$ShortCell <- unlist(lapply(strsplit(mi.clump.df$HarmonCell, split=".", fixed=TRUE),
+                                       FUN=function(X) paste0(X[length(X)])))
+```
+
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+mi.clump.df$ProteinCHR <- "NA"
+mi.clump.df$ProteinCHR[mi.clump.df$Protein %in% c("CD16", "CD161", "CD1c", "CD1.multi", "CD244", "CD32", "CD34", "CD45RA", "CD45RO", "CD62L", "CD64")] <- 1
+mi.clump.df$ProteinCHR[mi.clump.df$Protein %in% c("CCR4", "CD28", "CD8", "CD8A", "CD8B", "CD83", "CXCR5", "HLADR", "PD1")] <- 2
+mi.clump.df$ProteinCHR[mi.clump.df$Protein %in% c("CCR4", "CCR5", "CD10")] <- 3
+mi.clump.df$ProteinCHR[mi.clump.df$Protein %in% c("CD38")] <- 4
+mi.clump.df$ProteinCHR[mi.clump.df$Protein %in% c("CD127", "CD14")] <- 5
+mi.clump.df$ProteinCHR[mi.clump.df$Protein %in% c("CCR6", "CD24", "CD337", "CD73", "CD83", "HLADR")] <- 6
+mi.clump.df$ProteinCHR[mi.clump.df$Protein %in% c("CD274")] <- 9
+mi.clump.df$ProteinCHR[mi.clump.df$Protein %in% c("CD25", "CD39", "CD95")] <- 10
+mi.clump.df$ProteinCHR[mi.clump.df$Protein %in% c("CD2", "CD20", "CD21", "CD3", "CD5", "CD56", "CD57", "CXCR5", "CRTh2")] <- 11
+mi.clump.df$ProteinCHR[mi.clump.df$Protein %in% c("CD27", "CD314", "CD4", "BDCA2")] <- 12
+mi.clump.df$ProteinCHR[mi.clump.df$Protein %in% c("TCR.Vd1", "TCR.Vd2", "TCR.Vg9")] <- 14
+mi.clump.df$ProteinCHR[mi.clump.df$Protein %in% c("CD11c", "CD19", "IgA", "IgD", "IgG", "IgM")] <- 16
+mi.clump.df$ProteinCHR[mi.clump.df$Protein %in% c("CCR10", "CCR7", "CD31")] <- 17
+mi.clump.df$ProteinCHR[mi.clump.df$Protein %in% c("CD158a.h", "CD158b", "CD335")] <- 19
+mi.clump.df$ProteinCHR[mi.clump.df$Protein %in% c("CD141", "BDCA3")] <- 20
+mi.clump.df$ProteinCHR[mi.clump.df$Protein %in% c("CD123", "CXCR3")] <- "X"
+
+mi.clump.df$CHR <- as.character(mi.clump.df$CHR)
+
+mi.clump.df$QTL <- "NA"
+mi.clump.df$QTL[mi.clump.df$CHR == mi.clump.df$ProteinCHR] <- "cis"
+mi.clump.df$QTL[mi.clump.df$CHR != mi.clump.df$ProteinCHR] <- "trans"
+```
+
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE, results='hide'}
+mi.all.genes <- unique(mi.clump.df$Gene)
+
+mi.gene.df <- getBM(attributes = c("ensembl_gene_id", "external_gene_name", "chromosome_name", "start_position", "end_position", "strand"),
+                 filters="external_gene_name", 
+                 values=mi.all.genes, mart=biomaRt.connection)
+```
+
+I'll define the proximal _cis_-QTLs as those within +/- 1Mb of the gene structure.
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+mi.clump.merge <- merge(mi.clump.df, mi.gene.df, by.x=c("Gene", "ProteinCHR"), by.y=c("external_gene_name", "chromosome_name"), all.x=TRUE)
+# for sum reason it doesn't want to find the correct ensembl id for CD21
+
+# assign cis eQTLs to distal or proximal - distal is within 1Mb from the start or end site, i.e. 500Kb either side
+mi.clump.merge$Distance <- "Distal"
+mi.clump.merge$Distance[((mi.clump.merge$BP >= mi.clump.merge$start_position-1.5e6) & 
+                           (mi.clump.merge$BP <= mi.clump.merge$end_position+1.5e6)) &
+                          mi.clump.merge$strand == 1] <- "Proximal" 
+mi.clump.merge$Distance[((mi.clump.merge$BP <= mi.clump.merge$start_position+1.5e6) &
+                           (mi.clump.merge$BP >= mi.clump.merge$end_position-1.5e6)) &
+                          mi.clump.merge$strand == -1] <- "Proximal" 
+mi.clump.merge$Distance[mi.clump.merge$QTL %in% c("trans")] <- "Distal"
+
+mi.clump.merge$Measure <- factor(mi.clump.merge$Measure,
+                                 levels=c("Mean", "Noise"),
+                                 labels=c("Mean", "Variability"))
+measure.cols <- c("#AC00E3", "#008B19")
+names(measure.cols) <- c("Mean", "Variability")
+```
+
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+mi.clump.merge$SigTier <- "Sub"
+mi.clump.merge$SigTier[mi.clump.merge$P <= 5e-8] <- "Second"
+mi.clump.merge$SigTier[mi.clump.merge$P <= 5e-8/59] <- "Top"
+mi.clump.merge$SigTier <- factor(mi.clump.merge$SigTier,
+                                 levels=c("Top", "Second", "Sub"))
+```
+
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+mi.clump.merge$Cohort <- "Milieu Int\u00e9rieur"
+twins.clump.merge$Cohort <- "TwinsUK"
+
+all.clump.merge <- do.call(rbind.data.frame,
+                           list("MI"=mi.clump.merge,
+                                "Twins"=twins.clump.merge))
+
+# double check harmonised cell types
+all.clump.merge$HarmonCell[all.clump.merge$HarmonCell %in% c("CD3.DN")] <- "DN.Tcells"
+all.clump.merge$HarmonCell[all.clump.merge$HarmonCell %in% c("CD3.DP")] <- "DP.Tcells"
+all.clump.merge$HarmonCell[all.clump.merge$HarmonCell %in% c("CD3.CD4")] <- "CD4.Tcells"
+
+all.clump.merge$Gene[all.clump.merge$Gene %in% c("CD3")] <- "CD3G"
+
+# subset to the top and second tier variability-QTLs
+var.qtls <- all.clump.merge[all.clump.merge$SigTier %in% c("Top", "Second") & all.clump.merge$Measure %in% c("Variability"), ]
+sum(table(var.qtls$HarmonCell))
+```
+
+Summarise over all variability QTLs.
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+var.qtls$BroadCell <- var.qtls$ShortCell
+var.qtls$BroadCell[var.qtls$ShortCell %in% c("Basophils", "Neutrophils", "Eosinophils")] <- "Granulocytes"
+var.qtls$BroadCell[var.qtls$ShortCell %in% c("Bcells")] <- "B cells"
+var.qtls$BroadCell[var.qtls$ShortCell %in% c("NKcells")] <- "NK cells"
+var.qtls$BroadCell[var.qtls$ShortCell %in% c("cDC1", "pDC")] <- "DCs"
+var.qtls$BroadCell[var.qtls$ShortCell %in% c("CD4", "DN", "DP", "memTreg", "naiveTreg", "Tcells",
+                                             "TCM", "TEM", "TEMRA", "Tfh", "Th17", "Th2", "Tnaive", "Tregs")] <- "\u03b1\u03b2.Tcells"
+var.qtls$BroadCell[var.qtls$HarmonCell %in% c("gd.Vd1.Tcells", "gd.Tcells", "gd.Vd2.Tcells")] <- "\u03b3\u03b4.Tcells"
+
+var.qtls$BroadCell <- factor(var.qtls$BroadCell,
+                             levels=c("\u03b1\u03b2.Tcells", "\u03b3\u03b4.Tcells", "B cells",
+                                          "NK cells", "Monocytes", "DCs", "Granulocytes"))
+```
+
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+cell.cols <- c("#0064ff", "#00b6ff", "#ff7800", "#ffb200", "#e82000", "#f000ff", "#6600a0", "#05a000")
+names(cell.cols) <- levels(var.qtls$BroadCell)
+
+broadcell.counts <- data.frame(table(var.qtls$Cohort, var.qtls$BroadCell))
+
+all.summ.p <- ggplot(broadcell.counts, aes(x=Var1, y=Freq, fill=Var2)) +
+  geom_bar(position='dodge', stat='identity') +
+  theme_mike() +
+  scale_fill_manual(values=cell.cols) +
+  labs(x="Cohort", y="# variability-QTLs") +
+  theme(legend.position="left") +
+  guides(fill=guide_legend(ncol=1, title.position="top", title="Celltype")) +
+  coord_flip() +
+  NULL
+
+ggsave(all.summ.p,
+       filename="plot.dir/Summary_varQTLs-bar.png",
+       height=3.15, width=6.25, dpi=300)
+
+
+ggsave(all.summ.p,
+       filename="plot.dir/Summary_varQTLs-bar.pdf",
+       height=3.15, width=6.25, dpi=300)
+
+all.summ.p
+```
+
+As there are soooo many alpha-beta T cell variability QTLs, I'll break these down a little bit into sub-types.
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+abtcell.counts <- data.frame(table(var.qtls[var.qtls$BroadCell %in% c("\u03b1\u03b2.Tcells") &
+                                              var.qtls$Cohort %in% c("Milieu Int\u00e9rieur"), ]$HarmonCell))
+
+t.summ.p <- ggplot(abtcell.counts,
+                     aes(x=reorder(Var1, Freq), y=Freq)) +
+  geom_bar(position='dodge', stat='identity', fill='grey80', colour='black') +
+  theme_mike() +
+  scale_fill_Publication() +
+  #scale_fill_manual(values=cell.cols) +
+  labs(x="\u03b1\u03b2 T cell subtype", y="# variability-QTLs") +
+  coord_flip() +
+  NULL
+
+ggsave(t.summ.p,
+       filename="plot.dir/Summary_abTcells_varQTLs-bar.png",
+       height=4.95, width=6.25, dpi=300)
+
+ggsave(t.summ.p,
+       filename="plot.dir/Summary_abTcells_varQTLs-bar.pdf",
+       height=4.95, width=6.25, dpi=300)
+
+t.summ.p
+```
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+bcell.counts <- data.frame(table(var.qtls[var.qtls$BroadCell %in% c("B cells") &
+                                              var.qtls$Cohort %in% c("TwinsUK"), ]$HarmonCell))
+
+b.summ.p <- ggplot(bcell.counts,
+                     aes(x=reorder(Var1, Freq), y=Freq)) +
+  geom_bar(position='dodge', stat='identity', fill='grey80', colour='black') +
+  theme_mike() +
+  scale_fill_Publication() +
+  #scale_fill_manual(values=cell.cols) +
+  labs(x="B cell subtype", y="# variability-QTLs") +
+  coord_flip() +
+  NULL
+
+ggsave(b.summ.p,
+       filename="plot.dir/Summary_Bcells_varQTLs-bar.png",
+       height=4.95, width=6.25, dpi=300)
+
+
+ggsave(b.summ.p,
+       filename="plot.dir/Summary_Bcells_varQTLs-bar.pdf",
+       height=4.95, width=6.25, dpi=300)
+
+b.summ.p
+```
+
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+dc.counts <- data.frame(table(var.qtls[var.qtls$BroadCell %in% c("DCs") &
+                                              var.qtls$Cohort %in% c("TwinsUK"), ]$HarmonCell))
+
+dc.summ.p <- ggplot(dc.counts,
+                     aes(x=reorder(Var1, Freq), y=Freq)) +
+  geom_bar(position='dodge', stat='identity', fill='grey80', colour='black') +
+  theme_mike() +
+  scale_fill_Publication() +
+  #scale_fill_manual(values=cell.cols) +
+  labs(x="B cell subtype", y="# variability-QTLs") +
+  coord_flip() +
+  NULL
+
+ggsave(dc.summ.p,
+       filename="plot.dir/Summary_DCs_varQTLs-bar.png",
+       height=4.95, width=6.25, dpi=300)
+
+
+ggsave(dc.summ.p,
+       filename="plot.dir/Summary_DCs_varQTLs-bar.pdf",
+       height=4.95, width=6.25, dpi=300)
+
+dc.summ.p
+```
+
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE, fig.height=6.25, fig.width=4.25}
+cell.cols <- c("#0064ff", "#00b6ff", "#ff7800", "#ffb200", "#e82000", "#f000ff", "#6600a0", "#05a000")
+names(cell.cols) <- levels(var.qtls$BroadCell)
+
+gene.counts <- data.frame(table(var.qtls$Cohort, var.qtls$Gene))
+
+all.summ.gene <- ggplot(gene.counts, aes(x=reorder(Var2, Freq), y=Freq)) +
+  geom_bar(position='dodge', stat='identity') +
+  theme_mike() +
+  labs(x="Gene", y="# variability-QTLs") +
+  coord_flip() +
+  NULL
+
+ggsave(all.summ.gene,
+       filename="plot.dir/Summary_Gene-bar.png",
+       height=6.25, width=4.25, dpi=300)
+
+
+ggsave(all.summ.gene,
+       filename="plot.dir/Summary_Gene-varQTLs-bar.pdf",
+       height=6.25, width=4.25, dpi=300)
+
+all.summ.gene
+```
+
+I want to assign each SNP to it's nearest; gene this should trivial.
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE, results='hide'}
+allgene.df <- getBM(attributes = c("ensembl_gene_id", "external_gene_name", "chromosome_name", "transcript_length",
+                                   "start_position", "end_position", "strand", "gene_biotype"),
+                    mart=biomaRt.connection)
+
+# filter out non-protein coding genes
+allgene.df <- allgene.df[allgene.df$gene_biotype %in% c("protein_coding"), ]
+allgene.df <- allgene.df[!duplicated(allgene.df$ensembl_gene_id), ]
+```
+
+I'll just annotate the nearest protein-coding gene for simplicity. It doesn't matter how far the gene is, it could be many Mbs away.
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+# loop over lead SNPs, find the closest gene
+lead.snps <- unique(all.clump.merge$SNP)
+lead.gene.list <- list()
+
+for(i in seq_along(lead.snps)){
+  lead.snp.i <- lead.snps[i]
+  snp.chr <- all.clump.merge[all.clump.merge$SNP %in% lead.snp.i, ]$CHR
+  snp.bp <- all.clump.merge[all.clump.merge$SNP %in% lead.snp.i, ]$BP
+  
+  chr.genes <- allgene.df[allgene.df$chromosome_name %in% snp.chr, ]
+  positions <- c(abs(chr.genes$start_position - snp.bp), abs(chr.genes$end_position - snp.bp))
+  nearest.start <- chr.genes[which(abs(chr.genes$start_position - snp.bp) == min(positions)), ]
+  nearest.end <- chr.genes[which(abs(chr.genes$end_position - snp.bp) == min(positions)), ]
+  
+  # pick the gene with the nearest start or end position
+  best.genes <- unique(c(nearest.start$external_gene_name, nearest.end$external_gene_name))
+  if(length(best.genes) > 1){
+      top.gene <- best.genes[which(abs(c(nearest.start$start_position, nearest.end$end_position) - snp.bp) == 
+                                     min(abs(c(nearest.start$start_position, nearest.end$end_position) - snp.bp)))]
+  } else{
+    top.gene <- best.genes
+  }
+
+  lead.gene.list[[lead.snp.i]] <- top.gene
+}
+
+lead.genes <- do.call(rbind.data.frame,
+                      lead.gene.list)
+colnames(lead.genes) <- c("Nearest.Gene")
+lead.genes$LeadSNP <- lead.snps
+lead.genes.merge <- merge(lead.genes, allgene.df, by.x=c("Nearest.Gene"), by.y=c('external_gene_name'))
+lead.genes.merge <- lead.genes.merge[!duplicated(lead.genes.merge$LeadSNP), ]
+
+lead.snps.merge <- merge(all.clump.merge, lead.genes.merge, by.x=c("SNP"), by.y=c("LeadSNP"))
+lead.snps.merge$Nearest.Gene <- as.character(lead.snps.merge$Nearest.Gene)
+```
+
+Create a few tables to summarise the variability QTLs.
+
+```{r}
+# how many traits?
+length(unique(lead.snps.merge$HarmonTraits))
+
+# how many proteins?
+length(unique(lead.snps.merge$Gene))
+
+# how many cell types?
+length(unique(lead.snps.merge$HarmonCell))
+```
+
+A nice way to sumarise QTLs and genetic association more generally is to plot the effect size vs. MAF - I can use this to summarise all of the association across all 
+traits. Maybe colour them by broad cell type?
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE, fig.height=4.25, width=4.25}
+ggplot(var.qtls[var.qtls$SigTier %in% c("Top", "Second"), ],
+       aes(x=MAF, y=BETA, fill=BroadCell)) +
+  geom_point(size=2, shape=21) +
+  theme_mike() +
+  scale_fill_manual(values=cell.cols) +
+  scale_y_continuous(limits=c(-5, 5)) +
+  labs(x="", y="Minor Allele Frequency") +
+  guides(fill=FALSE) +
+  NULL
+```
+
+Should I label some of the interesting hits?
+
+Where do these variants lie with respect to gene and regulatory annotations?  I'll use Ensembls VEP for this. There are 8 varSNPs that don't have an rsID, so I'll need to 
+identify their locations manually.
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+# this code follows on from submitting the list of rsIDs to Ensembl VEP
+varsnp.vep <- read.table("All_varQTL_VEP-rsID.txt",
+                         sep="\t", header=FALSE, stringsAsFactors=FALSE)
+
+colnames(varsnp.vep) <- c("SNP", "Location", "Allele", "Consequence", "Impact", "Symbol", "Gene", "Featuretype", "Feature", "Biotype", "Exon", "Intron", "NA.1", "NA.2",
+                          "cDNA.pos",  "CDS.pos", "Protein.pos", "AminoAcids", "Codons", "VariantID", "Distance.to.Transcript", "Strand", "FLAGS", "HGNC", "HGNC.ID", 
+                          "TSL",  "APPRIS", "SIFT", "PolyPhen", "AF", "gnomAD.AF", "gnomAD.AFR.AF", "gnomAD.AMR.AF", "gnomAD.ASJ.AF", "gnomAD.EAS.AF",
+                          "gnomAD.FIN.AF", "gnomAD.NFE.AF", "gnomAD.OTH.AF", "gnomAD.SAS.AF", "ClinSig", "Somatic.Status", "Pheno.Disease", "PubMed", "Motif.Name",
+                          "Motif.Pos", "Highinfo.pos", "MotifScore.Change", "Assoc.Pheno", "LoFtool", "AncAllele")
+```
+
+Take the unique annotation for each SNP.
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE, fig.height=3.75, fig.width=4.95}
+# summarise the variant info
+varsnp.vep$Overlap <- "Intergenic"
+varsnp.vep$Overlap[varsnp.vep$Consequence %in% c("3_prime_UTR_variant", "3_prime_UTR_variant,NMD_transcript_variant",
+                                                 "5_prime_UTR_variant", "5_prime_UTR_variant,NMD_transcript_variant")] <- "UTR"
+varsnp.vep$Overlap[varsnp.vep$Consequence %in% c("downstream_gene_variant")] <- "Downstream"
+varsnp.vep$Overlap[varsnp.vep$Consequence %in% c("upstream_gene_variant")] <- "Upstream"
+varsnp.vep$Overlap[varsnp.vep$Consequence %in% c("intron_variant", "intron_variant,NMD_transcript_variant",
+                                                 "intron_variant,non_coding_transcript_variant")] <- "Intronic"
+varsnp.vep$Overlap[varsnp.vep$Consequence %in% c("missense_variant", "missense_variant,NMD_transcript_variant")] <- "Missense"
+varsnp.vep$Overlap[varsnp.vep$Consequence %in% c("non_coding_transcript_exon_variant")] <- "non-coding.Transcript"
+varsnp.vep$Overlap[varsnp.vep$Consequence %in% c("regulatory_region_variant")] <- "Regulatory.Region"
+varsnp.vep$Overlap[varsnp.vep$Consequence %in% c("synonymous_variant")] <- "Synonymous"
+varsnp.vep$Overlap[varsnp.vep$Consequence %in% c("TF_binding_site_variant")] <- "TF.Binding"
+
+varsnp.cons.tab <- data.frame(table(varsnp.vep$Overlap))
+varsnp.cons.tab$Freq <- varsnp.cons.tab$Freq/nrow(varsnp.vep)
+
+varsnp.loc.plot <- ggplot(varsnp.cons.tab, aes(x=reorder(Var1, Freq), y=Freq)) +
+  geom_bar(stat='identity', colour='black', fill='grey80') +
+  theme_mike() +
+  scale_fill_Publication() +
+  labs(x="varSNP Annotation", y="Proportion") +
+  #guides(fill=guide_legend(title="Annotation")) +
+  coord_flip()
+
+ggsave(varsnp.loc.plot,
+       filename="plot.dir/VarSNP-location-bar.pdf",
+       height=3.25, width=4.95, useDingbats=FALSE)
+
+varsnp.loc.plot
+```
+
+Do I want one of those plots that shows the distance from the nearest TSS?
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+# loop over lead SNPs and get the distance to TSS
+lead.dist.list <- list()
+
+for(i in seq_along(lead.snps)){
+  lead.snp.i <- lead.snps[i]
+  snp.chr <- all.clump.merge[all.clump.merge$SNP %in% lead.snp.i, ]$CHR
+  snp.bp <- all.clump.merge[all.clump.merge$SNP %in% lead.snp.i, ]$BP
+  
+  chr.genes <- allgene.df[allgene.df$chromosome_name %in% snp.chr, ]
+  positions <- c(abs(chr.genes$start_position - snp.bp))
+  nearest.start <- chr.genes$start_position[which(abs(chr.genes$start_position - snp.bp) == min(positions))]
+
+  lead.dist.list[[lead.snp.i]] <- snp.bp - nearest.start
+}
+
+lead.tss.dist <- as.data.frame(do.call(rbind.data.frame,
+                                       lead.dist.list)[, 1])
+
+colnames(lead.tss.dist) <- c("TSSDist")
+lead.tss.dist$LeadSNP <- lead.snps
+lead.tss.merge <- merge(lead.snps.merge, lead.tss.dist, by.x=c("SNP"), by.y=c("LeadSNP"), all.x=TRUE)
+```
+
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE, fig.height=2.15, fig.width=4.95}
+min.dist <- min(lead.tss.merge$TSSDist)
+max.dist <- max(lead.tss.merge$TSSDist)
+
+tss.dist.plot <- ggplot(lead.tss.merge[lead.tss.merge$SigTier %in% c("Top", "Second") & 
+                                         lead.tss.merge$Measure %in% c("Variability"), ],
+       aes(x=TSSDist)) +
+  geom_density(bw=1e5, lwd=1, fill='grey80', alpha=0.75) +
+  geom_vline(mapping=aes(xintercept=-1e5), lty=2, col='purple') +
+  geom_vline(mapping=aes(xintercept=1e5), lty=2, col='purple') +
+  geom_text(x=-3e5, y=2.2e-6, label="-100kb", fontface='plain', size=5) +
+  geom_text(x=3e5, y=2.2e-6, label="100kb", fontface='plain', size=5) +
+  scale_x_continuous(limits=c(-1e6, 1e6), oob=squish,
+                     breaks=c(-1e6, -5e5, 0, 5e5, 1e6),
+                     labels=c("-1Mb","-500kb", "0", "500kb", "1Mb")) +
+  scale_y_continuous(breaks=c(0, 5e-7, 1e-6, 2e-6)) +
+  theme_mike() + 
+  labs(x="Distance from nearest TSS (nt)", y="Density") +
+  NULL
+
+ggsave(tss.dist.plot,
+       filename="plot.dir/VarSNP_TSSdist-density.pdf",
+       height=3.25, width=4.95, useDingbats=FALSE)
+
+tss.dist.plot
+```
+
+I'll do the same for the mean _trans_-QTLs.
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+# these are the results from mean trans-QTLs submitted to VEP
+meansnp.vep <- read.table("All_meanQTL_VEP-rsID.txt",
+                         sep="\t", header=FALSE, stringsAsFactors=FALSE)
+
+colnames(meansnp.vep) <- c("SNP", "Location", "Allele", "Consequence", "Impact", "Symbol", "Gene", "Featuretype", "Feature", "Biotype", "Exon", "Intron",
+                          "cDNA.pos",  "CDS.pos", "Protein.pos", "AminoAcids", "Codons", "VariantID", "Distance.to.Transcript", "Strand", "FLAGS", "HGNC", "HGNC.ID", 
+                          "TSL",  "APPRIS", "ENSP", "SIFT", "PolyPhen", "AF", "gnomAD.AF", "gnomAD.AFR.AF", "gnomAD.AMR.AF", "gnomAD.ASJ.AF", "gnomAD.EAS.AF",
+                          "gnomAD.FIN.AF", "gnomAD.NFE.AF", "gnomAD.OTH.AF", "gnomAD.SAS.AF", "ClinSig", "Somatic.Status", "Pheno.Disease", "PubMed", "Motif.Name",
+                          "Motif.Pos", "Highinfo.pos", "MotifScore.Change", "Assoc.Pheno", "LoFtool", "AncAllele")
+```
+
+Take the unique annotation for each SNP.
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE, fig.height=3.75, fig.width=4.95}
+# summarise the variant info
+meansnp.vep$Overlap <- "Intergenic"
+meansnp.vep$Overlap[meansnp.vep$Consequence %in% c("3_prime_UTR_variant", "3_prime_UTR_variant,NMD_transcript_variant",
+                                                 "5_prime_UTR_variant", "5_prime_UTR_variant,NMD_transcript_variant")] <- "UTR"
+meansnp.vep$Overlap[meansnp.vep$Consequence %in% c("downstream_gene_variant")] <- "Downstream"
+meansnp.vep$Overlap[meansnp.vep$Consequence %in% c("upstream_gene_variant")] <- "Upstream"
+meansnp.vep$Overlap[meansnp.vep$Consequence %in% c("intron_variant", "intron_variant,NMD_transcript_variant",
+                                                 "intron_variant,non_coding_transcript_variant")] <- "Intronic"
+meansnp.vep$Overlap[meansnp.vep$Consequence %in% c("missense_variant", "missense_variant,NMD_transcript_variant")] <- "Missense"
+meansnp.vep$Overlap[meansnp.vep$Consequence %in% c("non_coding_transcript_exon_variant")] <- "non-coding.Transcript"
+meansnp.vep$Overlap[meansnp.vep$Consequence %in% c("regulatory_region_variant")] <- "Regulatory.Region"
+meansnp.vep$Overlap[meansnp.vep$Consequence %in% c("synonymous_variant")] <- "Synonymous"
+meansnp.vep$Overlap[meansnp.vep$Consequence %in% c("TF_binding_site_variant")] <- "TF.Binding"
+
+meansnp.cons.tab <- data.frame(table(meansnp.vep$Overlap))
+meansnp.cons.tab$Freq <- meansnp.cons.tab$Freq/nrow(meansnp.vep)
+
+meansnp.loc.plot <- ggplot(meansnp.cons.tab, aes(x=reorder(Var1, Freq), y=Freq)) +
+  geom_bar(stat='identity', colour='black', fill='grey80') +
+  theme_mike() +
+  scale_fill_Publication() +
+  labs(x="meansnp Annotation", y="Proportion") +
+  #guides(fill=guide_legend(title="Annotation")) +
+  coord_flip()
+
+ggsave(meansnp.loc.plot,
+       filename="plot.dir/meansnp-location-bar.pdf",
+       height=3.25, width=4.95, useDingbats=FALSE)
+
+meansnp.loc.plot
+```
+
+Do I want one of those plots that shows the distance from the nearest TSS?
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE, fig.height=2.15, fig.width=4.95}
+min.dist <- min(lead.tss.merge$TSSDist)
+max.dist <- max(lead.tss.merge$TSSDist)
+
+tss.dist.plot <- ggplot(lead.tss.merge[lead.tss.merge$SigTier %in% c("Top", "Second") & 
+                                         lead.tss.merge$Measure %in% c("Mean"), ],
+       aes(x=TSSDist)) +
+  geom_density(bw=1e5, lwd=1, fill='grey80', alpha=0.75) +
+  geom_vline(mapping=aes(xintercept=-1e5), lty=2, col='purple') +
+  geom_vline(mapping=aes(xintercept=1e5), lty=2, col='purple') +
+  geom_text(x=-3e5, y=2.2e-6, label="-100kb", fontface='plain', size=5) +
+  geom_text(x=3e5, y=2.2e-6, label="100kb", fontface='plain', size=5) +
+  scale_x_continuous(limits=c(-1e6, 1e6), oob=squish,
+                     breaks=c(-1e6, -5e5, 0, 5e5, 1e6),
+                     labels=c("-1Mb","-500kb", "0", "500kb", "1Mb")) +
+  scale_y_continuous(breaks=c(0, 5e-7, 1e-6, 2e-6)) +
+  theme_mike() + 
+  labs(x="Distance from nearest TSS (nt)", y="Density") +
+  NULL
+
+ggsave(tss.dist.plot,
+       filename="plot.dir/meanSNP_TSSdist-density.pdf",
+       height=3.25, width=4.95, useDingbats=FALSE)
+
+tss.dist.plot
+```
+
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+# save the clump summary
+# this is used for combining with the cis-QTL results later
+write.table(lead.tss.merge[lead.tss.merge$Measure %in% c("Variability") & lead.tss.merge$SigTier %in% c("Top", "Second"), ],
+            file="VariabilityQTL_clump-results.txt",
+            sep="\t", row.names=FALSE, quote=FALSE)
+```
+
+
